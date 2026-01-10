@@ -1,0 +1,73 @@
+# ACTIV Membership Portal - Requirements
+# Django 5.2 + Python 3.11+
+
+# Core Django
+Django>=5.2,<6.0
+djangorestframework>=3.15,<4.0
+django-cors-headers>=4.5,<5.0
+django-filter>=24.0
+
+# Authentication
+djangorestframework-simplejwt>=5.3,<6.0
+django-allauth>=65.0,<66.0
+social-auth-app-django>=5.4,<6.0
+
+# Database
+psycopg2-binary>=2.9,<3.0
+
+# Caching & Sessions
+redis>=5.0,<6.0
+django-redis>=5.4,<6.0
+
+# Task Queue
+celery>=5.4,<6.0
+django-celery-beat>=2.7,<3.0
+django-celery-results>=2.5,<3.0
+
+# API Documentation
+drf-yasg>=1.21,<2.0
+
+# File Storage
+boto3>=1.35,<2.0
+django-storages>=1.14,<2.0
+
+# Validation & Serialization
+Pillow>=10.0,<11.0
+python-dateutil>=2.8,<3.0
+
+# Payments
+requests>=2.32,<3.0
+
+# Notifications
+django-phonenumber-field>=8.0,<9.0
+phonenumbers>=8.13,<9.0
+twilio>=9.0,<10.0
+
+# AI/ML
+numpy>=2.0,<3.0
+pandas>=2.2,<3.0
+scikit-learn>=1.5,<2.0
+tensorflow>=2.17,<3.0
+spacy>=3.8,<4.0
+
+# Utilities
+python-dotenv>=1.0,<2.0
+django-extensions>=3.2,<4.0
+django-countries>=7.6,<8.0
+phonenumbers>=8.13,<9.0
+
+# Testing
+pytest>=8.0,<9.0
+pytest-django>=4.8,<5.0
+pytest-cov>=5.0,<6.0
+factory-boy>=3.3,<4.0
+
+# Security
+django-environ>=0.11,<1.0
+cryptography>=43.0,<44.0
+
+# Formatting & Linting
+black>=24.0,<25.0
+flake8>=7.0,<8.0
+isort>=5.13,<6.0
+mypy>=1.10,<2.0
