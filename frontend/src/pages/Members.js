@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Card,
@@ -23,6 +24,10 @@ import {
   MenuItem,
   ListItemIcon,
   ListItemText,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -31,16 +36,19 @@ import {
   Edit as EditIcon,
   Visibility as ViewIcon,
 } from '@mui/icons-material';
-import { fetchMembers } from '../store/slices/memberSlice';
+import { fetchMembers, fetchMemberById } from '../store/slices/memberSlice';
 
 export default function Members() {
   const dispatch = useDispatch();
-  const { members, loading, totalCount } = useSelector((state) => state.members);
+  const navigate = useNavigate();
+  const { members, loading, totalCount, currentMember } = useSelector((state) => state.members);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [search, setSearch] = useState('');
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedMember, setSelectedMember] = useState(null);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
 
   useEffect(() => {
     dispatch(fetchMembers({ page: page + 1, search }));
@@ -62,7 +70,20 @@ export default function Members() {
 
   const handleMenuClose = () => {
     setAnchorEl(null);
-    setSelectedMember(null);
+  };
+
+  const handleAddMember = () => {
+    navigate('/register');
+  };
+
+  const handleViewDetails = () => {
+    setViewDialogOpen(true);
+    handleMenuClose();
+  };
+
+  const handleEdit = () => {
+    setEditDialogOpen(true);
+    handleMenuClose();
   };
 
   const getStatusColor = (status) => {
@@ -85,7 +106,7 @@ export default function Members() {
             Browse and manage ACTIV members
           </Typography>
         </Box>
-        <Button variant="contained" startIcon={<PersonAddIcon />}>
+        <Button variant="contained" startIcon={<PersonAddIcon />} onClick={handleAddMember}>
           Add Member
         </Button>
       </Box>
@@ -198,11 +219,11 @@ export default function Members() {
       </Card>
 
       <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
-        <MenuItem onClick={handleMenuClose}>
+        <MenuItem onClick={handleViewDetails}>
           <ListItemIcon><ViewIcon fontSize="small" /></ListItemIcon>
           <ListItemText>View Details</ListItemText>
         </MenuItem>
-        <MenuItem onClick={handleMenuClose}>
+        <MenuItem onClick={handleEdit}>
           <ListItemIcon><EditIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Edit</ListItemText>
         </MenuItem>

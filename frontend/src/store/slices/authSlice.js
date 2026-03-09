@@ -28,7 +28,7 @@ export const register = createAsyncThunk('auth/register', async (userData, { rej
 export const fetchCurrentUser = createAsyncThunk('auth/fetchCurrentUser', async (_, { rejectWithValue }) => {
   try {
     const token = localStorage.getItem('accessToken');
-    const response = await axios.get(`${API_URL}/auth/me`, {
+    const response = await axios.get(`${API_URL}/auth/profile/`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     return response.data;
@@ -46,6 +46,24 @@ export const logout = createAsyncThunk('auth/logout', async () => {
   } finally {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
+  }
+});
+
+export const resetPasswordRequest = createAsyncThunk('auth/resetPasswordRequest', async (email, { rejectWithValue }) => {
+  try {
+    const response = await axios.post(`${API_URL}/auth/password/reset/`, { email });
+    return response.data;
+  } catch (error) {
+    return rejectWithValue(error.response?.data || 'Failed to send reset email');
+  }
+});
+
+export const resetPasswordConfirm = createAsyncThunk('auth/resetPasswordConfirm', async (data, { rejectWithValue }) => {
+  try {
+    const response = await axios.post(`${API_URL}/auth/password/reset/confirm/`, data);
+    return response.data;
+  } catch (error) {
+    return rejectWithValue(error.response?.data || 'Failed to reset password');
   }
 });
 

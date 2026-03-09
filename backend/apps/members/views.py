@@ -90,6 +90,28 @@ class MemberViewSet(viewsets.ModelViewSet):
         serializer = MemberSerializer(member)
         return Response(serializer.data)
     
+    @action(detail=False, methods=['get', 'put', 'patch'], url_path='my-profile')
+    def my_profile(self, request):
+        """Get or update current user's member profile."""
+        if not request.user.is_authenticated:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        try:
+            member = Member.objects.get(user=request.user)
+        except Member.DoesNotExist:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        if request.method == 'GET':
+            serializer = MemberSerializer(member)
+            return Response(serializer.data)
+        
+        # PUT or PATCH
+        serializer = MemberCreateSerializer(member, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(MemberSerializer(member).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
     @action(detail=True, methods=['post'])
     def update_sister_concerns(self, request, pk=None):
         """Update sister concerns."""

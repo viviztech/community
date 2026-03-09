@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   Box,
@@ -16,6 +16,10 @@ import {
 } from '@mui/material';
 import { PhotoCamera } from '@mui/icons-material';
 import { fetchMemberProfile, updateMemberProfile } from '../store/slices/memberSlice';
+import { fetchCurrentUser } from '../store/slices/authSlice';
+import axios from 'axios';
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
 
 const genderOptions = [
   { value: 'M', label: 'Male' },
@@ -64,6 +68,8 @@ export default function Profile() {
     gst_registered: false,
   });
   const [success, setSuccess] = useState(false);
+  const fileInputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     dispatch(fetchMemberProfile());
@@ -107,6 +113,37 @@ export default function Profile() {
     });
   };
 
+  const handlePhotoClick = () => {
+    fileInputRef.current.click();
+  };
+
+  const handlePhotoChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('profile_image', file);
+    
+    try {
+      const token = localStorage.getItem('accessToken');
+      await axios.put(`${API_URL}/auth/profile/`, formData, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      // Refresh user data
+      dispatch(fetchCurrentUser());
+      dispatch(fetchMemberProfile());
+      setSuccess(true);
+    } catch (err) {
+      console.error('Photo upload failed:', err);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <Box>
       <Typography variant="h4" fontWeight={600} gutterBottom>
@@ -131,14 +168,29 @@ export default function Profile() {
       <Card>
         <CardContent sx={{ p: 4 }}>
           <Box display="flex" alignItems="center" mb={4}>
-            <Avatar sx={{ width: 80, height: 80, mr: 3, bgcolor: 'primary.main' }}>
+            <Avatar 
+              sx={{ width: 80, height: 80, mr: 3, bgcolor: 'primary.main' }}
+              src={user?.profile_image ? `${API_URL.replace('/api/v1', '')}${user.profile_image}` : undefined}
+            >
               {user?.first_name?.[0] || 'U'}
             </Avatar>
             <Box>
               <Typography variant="h6">{user?.full_name}</Typography>
               <Typography color="text.secondary">{user?.email}</Typography>
-              <Button startIcon={<PhotoCamera />} sx={{ mt: 1 }}>
-                Change Photo
+              <input
+                type="file"
+                ref={fileInputRef}
+                style={{ display: 'none' }}
+                accept="image/*"
+                onChange={handlePhotoChange}
+              />
+              <Button 
+                startIcon={uploading ? <CircularProgress size={16} /> : <PhotoCamera />} 
+                onClick={handlePhotoClick}
+                sx={{ mt: 1 }}
+                disabled={uploading}
+              >
+                {uploading ? 'Uploading...' : 'Change Photo'}
               </Button>
             </Box>
           </Box>

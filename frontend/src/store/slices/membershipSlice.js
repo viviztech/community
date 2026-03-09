@@ -57,7 +57,7 @@ const membershipSlice = createSlice({
       })
       .addCase(fetchMembershipTiers.fulfilled, (state, action) => {
         state.loading = false;
-        state.tiers = action.payload;
+        state.tiers = action.payload.results || action.payload;
       })
       .addCase(fetchMembershipTiers.rejected, (state, action) => {
         state.loading = false;

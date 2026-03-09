@@ -65,6 +65,49 @@ class UserRegistrationView(APIView):
         )
 
 
+class LoginView(APIView):
+    """Handle user login with email and password."""
+    
+    permission_classes = [permissions.AllowAny]
+    
+    def post(self, request):
+        email = request.data.get('email')
+        password = request.data.get('password')
+        
+        if not email or not password:
+            return Response({
+                'error': 'Email and password are required.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            user = User.objects.get(email=email)
+            
+            if not user.check_password(password):
+                return Response({
+                    'error': 'Invalid credentials.'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+            
+            if not user.is_active:
+                return Response({
+                    'error': 'Account is deactivated.'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+            
+            # Generate tokens
+            from rest_framework_simplejwt.tokens import RefreshToken
+            refresh = RefreshToken.for_user(user)
+            
+            return Response({
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+                'user': UserSerializer(user).data
+            })
+            
+        except User.DoesNotExist:
+            return Response({
+                'error': 'Invalid credentials.'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+
 class CustomTokenObtainPairView(TokenObtainPairView):
     """Custom token obtain view with additional user info."""
     
@@ -88,6 +131,23 @@ class UserProfileView(APIView):
     def patch(self, request):
         serializer = UserSerializer(
             request.user, data=request.data, partial=True
+        )
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def put(self, request):
+        # Handle multipart form data for file uploads
+        user = request.user
+        
+        if 'profile_image' in request.FILES:
+            user.profile_image = request.FILES['profile_image']
+            user.save()
+            return Response(UserSerializer(user).data)
+        
+        serializer = UserSerializer(
+            user, data=request.data, partial=True
         )
         if serializer.is_valid():
             serializer.save()

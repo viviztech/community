@@ -18,7 +18,7 @@ export const fetchMembers = createAsyncThunk('members/fetchAll', async (params =
 
 export const fetchMemberProfile = createAsyncThunk('members/fetchProfile', async (_, { rejectWithValue }) => {
   try {
-    const response = await axios.get(`${API_URL}/members/profile/`, getAuthHeader());
+    const response = await axios.get(`${API_URL}/members/my-profile/`, getAuthHeader());
     return response.data;
   } catch (error) {
     return rejectWithValue(error.response?.data || 'Failed to fetch profile');
@@ -27,7 +27,7 @@ export const fetchMemberProfile = createAsyncThunk('members/fetchProfile', async
 
 export const updateMemberProfile = createAsyncThunk('members/updateProfile', async (data, { rejectWithValue }) => {
   try {
-    const response = await axios.put(`${API_URL}/members/profile/`, data, getAuthHeader());
+    const response = await axios.patch(`${API_URL}/members/my-profile/`, data, getAuthHeader());
     return response.data;
   } catch (error) {
     return rejectWithValue(error.response?.data || 'Failed to update profile');

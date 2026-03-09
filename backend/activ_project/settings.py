@@ -348,6 +348,7 @@ AI_RECOMMENDATION_MODEL = env('AI_RECOMMENDATION_MODEL', default='collaborative_
 
 # Site Configuration
 SITE_ID = 1
+FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:3000')
 ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_EMAIL_VERIFICATION = 'mandatory'
 ACCOUNT_AUTHENTICATION_METHOD = 'email'

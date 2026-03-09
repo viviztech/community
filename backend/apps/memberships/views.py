@@ -86,3 +86,47 @@ class MembershipViewSet(viewsets.ModelViewSet):
             'end_date': membership.end_date,
             'issued_at': membership.certificate_issued_at
         })
+    
+    @action(detail=False, methods=['post'], url_path='apply')
+    def apply_for_membership(self, request):
+        """Apply for a membership."""
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        tier_id = request.data.get('tier_id')
+        membership_type = request.data.get('membership_type', 'yearly')
+        
+        if not tier_id:
+            return Response({'error': 'tier_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            tier = MembershipTier.objects.get(id=tier_id, is_active=True)
+        except MembershipTier.DoesNotExist:
+            return Response({'error': 'Invalid tier'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Get member profile
+        if not hasattr(request.user, 'member_profile'):
+            return Response({'error': 'Member profile not found'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        member = request.user.member_profile
+        
+        # Check if already has active membership
+        existing = Membership.objects.filter(member=member, status='active').first()
+        if existing:
+            return Response({'error': 'Already have an active membership'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Calculate dates
+        start_date = timezone.now().date()
+        end_date = start_date + timedelta(days=365) if membership_type == 'yearly' else None
+        
+        # Create membership
+        membership = Membership.objects.create(
+            member=member,
+            tier=tier,
+            membership_type=membership_type,
+            start_date=start_date,
+            end_date=end_date,
+            status='pending'  # Will be updated after payment
+        )
+        
+        return Response(MembershipSerializer(membership).data, status=status.HTTP_201_CREATED)
