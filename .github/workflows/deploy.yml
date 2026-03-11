@@ -19,9 +19,11 @@ jobs:
 
       - name: Install dependencies
         run: npm install
+        working-directory: frontend/frontend
 
       - name: Build project
         run: npm run build
+        working-directory: frontend/frontend
 
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v0.1.7
@@ -35,4 +37,3 @@ jobs:
             pm2 stop activ-frontend || true
             pm2 serve build 3002 --name activ-frontend
             pm2 save
-
