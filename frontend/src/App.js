@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { CircularProgress, Box } from '@mui/material';
 import Layout from './components/Layout';
+import PublicLayout from './components/PublicLayout';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
@@ -12,6 +13,14 @@ import Members from './pages/Members';
 import Events from './pages/Events';
 import Memberships from './pages/Memberships';
 import AdminDashboard from './pages/AdminDashboard';
+
+// Public Pages
+import Home from './pages/Home';
+import About from './pages/About';
+import PublicEvents from './pages/Events';
+import Membership from './pages/Membership';
+import Contact from './pages/Contact';
+
 import { fetchCurrentUser } from './store/slices/authSlice';
 
 // Protected Route Component
@@ -41,8 +50,8 @@ const ProtectedRoute = ({ children, requireAdmin = false }) => {
   return children;
 };
 
-// Public Route (redirect if authenticated)
-const PublicRoute = ({ children }) => {
+// Auth Route (redirect if authenticated to dashboard)
+const AuthRoute = ({ children }) => {
   const { isAuthenticated } = useSelector((state) => state.auth);
   return isAuthenticated ? <Navigate to="/dashboard" /> : children;
 };
@@ -59,12 +68,25 @@ function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-      <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
-      <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
+      {/* ==================== PUBLIC ROUTES ==================== */}
+      {/* These routes are accessible without authentication */}
+      <Route element={<PublicLayout />}>
+        <Route path="/" element={<Home />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/events" element={<PublicEvents />} />
+        <Route path="/membership" element={<Membership />} />
+        <Route path="/contact" element={<Contact />} />
+      </Route>
+
+      {/* ==================== AUTH ROUTES ==================== */}
+      {/* These routes redirect to dashboard if already authenticated */}
+      <Route path="/login" element={<AuthRoute><Login /></AuthRoute>} />
+      <Route path="/register" element={<AuthRoute><Register /></AuthRoute>} />
+      <Route path="/forgot-password" element={<AuthRoute><ForgotPassword /></AuthRoute>} />
       
-      <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-        <Route index element={<Navigate to="/dashboard" replace />} />
+      {/* ==================== PROTECTED ROUTES ==================== */}
+      {/* These routes require authentication */}
+      <Route path="/app" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="profile" element={<Profile />} />
         <Route path="members" element={<Members />} />
@@ -77,6 +99,10 @@ function App() {
         } />
       </Route>
       
+      {/* Legacy route for dashboard - redirects to /app/dashboard */}
+      <Route path="/dashboard" element={<Navigate to="/app/dashboard" replace />} />
+      
+      {/* Catch all - redirect to home */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
