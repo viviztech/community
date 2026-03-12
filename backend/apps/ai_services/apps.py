@@ -3,6 +3,6 @@ from django.utils.translation import gettext_lazy as _
 
 
 class AiServicesConfig(AppConfig):
-    default_auto_field = 'django.db.models.BigAutoField'
-    name = 'apps.ai_services'
-    verbose_name = _('AI Services')
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "apps.ai_services"
+    verbose_name = _("AI Services")

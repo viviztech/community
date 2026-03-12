@@ -2,24 +2,26 @@
 URL configuration for ACTIV Membership Portal.
 """
 
-from django.contrib import admin
-from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.contrib import admin
 from django.http import JsonResponse
-from rest_framework import permissions
-from drf_yasg.views import get_schema_view
+from django.urls import include, path
 from drf_yasg import openapi
+from drf_yasg.views import get_schema_view
+from rest_framework import permissions
+
 
 # Health check endpoint
 def health_check(request):
-    return JsonResponse({'status': 'healthy', 'service': 'ACTIV Backend'})
+    return JsonResponse({"status": "healthy", "service": "ACTIV Backend"})
+
 
 # API Documentation
 schema_view = get_schema_view(
     openapi.Info(
         title="ACTIV Membership Portal API",
-        default_version='v1',
+        default_version="v1",
         description="""
         API Documentation for ACTIV Membership Portal.
         
@@ -42,41 +44,30 @@ schema_view = get_schema_view(
 
 urlpatterns = [
     # Health check endpoint
-    path('health/', health_check, name='health_check'),
-    
+    path("health/", health_check, name="health_check"),
     # Django Admin
-    path('admin/', admin.site.urls),
-    
+    path("admin/", admin.site.urls),
     # API Documentation
-    path('api-docs/', schema_view.with_ui('swagger', cache_timeout=0), name='api-docs'),
-    path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='redoc'),
-    
+    path("api-docs/", schema_view.with_ui("swagger", cache_timeout=0), name="api-docs"),
+    path("redoc/", schema_view.with_ui("redoc", cache_timeout=0), name="redoc"),
     # Authentication
-    path('api/v1/auth/', include('apps.accounts.urls')),
-    
+    path("api/v1/auth/", include("apps.accounts.urls")),
     # Core
-    path('api/v1/', include('apps.core.urls')),
-    
+    path("api/v1/", include("apps.core.urls")),
     # Members
-    path('api/v1/members/', include('apps.members.urls')),
-    
+    path("api/v1/members/", include("apps.members.urls")),
     # Memberships
-    path('api/v1/memberships/', include('apps.memberships.urls')),
-    
+    path("api/v1/memberships/", include("apps.memberships.urls")),
     # Approvals
-    path('api/v1/approvals/', include('apps.approvals.urls')),
-    
+    path("api/v1/approvals/", include("apps.approvals.urls")),
     # Events
-    path('api/v1/events/', include('apps.events.urls')),
-    
+    path("api/v1/events/", include("apps.events.urls")),
     # Payments
-    path('api/v1/payments/', include('apps.payments.urls')),
-    
+    path("api/v1/payments/", include("apps.payments.urls")),
     # Notifications
-    path('api/v1/notifications/', include('apps.notifications.urls')),
-    
+    path("api/v1/notifications/", include("apps.notifications.urls")),
     # AI Services
-    path('api/v1/ai/', include('apps.ai_services.urls')),
+    path("api/v1/ai/", include("apps.ai_services.urls")),
 ]
 
 # Media files in development
