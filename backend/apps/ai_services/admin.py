@@ -1,7 +1,6 @@
 from django.contrib import admin
 
-from .models import (AnalyticsInsight, MemberCluster, MemberRecommendation,
-                     SearchQuery)
+from .models import AnalyticsInsight, MemberCluster, MemberRecommendation, SearchQuery
 
 
 @admin.register(MemberCluster)

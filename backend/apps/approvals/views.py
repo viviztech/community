@@ -11,9 +11,12 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from .models import ApprovalAction, ApprovalWorkflow, EscalationRule
-from .serializers import (ApprovalActionCreateSerializer,
-                          ApprovalActionSerializer, ApprovalWorkflowSerializer,
-                          EscalationRuleSerializer)
+from .serializers import (
+    ApprovalActionCreateSerializer,
+    ApprovalActionSerializer,
+    ApprovalWorkflowSerializer,
+    EscalationRuleSerializer,
+)
 
 
 class ApprovalWorkflowViewSet(viewsets.ModelViewSet):

@@ -6,12 +6,15 @@ from rest_framework import filters, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from .models import (GeographicArea, GovernmentSchemeBenefit, Member,
-                     SisterConcern)
-from .serializers import (GeographicAreaSerializer,
-                          GovernmentSchemeBenefitCreateSerializer,
-                          MemberCreateSerializer, MemberListSerializer,
-                          MemberSerializer, SisterConcernCreateSerializer)
+from .models import GeographicArea, GovernmentSchemeBenefit, Member, SisterConcern
+from .serializers import (
+    GeographicAreaSerializer,
+    GovernmentSchemeBenefitCreateSerializer,
+    MemberCreateSerializer,
+    MemberListSerializer,
+    MemberSerializer,
+    SisterConcernCreateSerializer,
+)
 
 
 class MemberViewSet(viewsets.ModelViewSet):

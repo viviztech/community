@@ -1,9 +1,13 @@
 from django.http import HttpResponse
 from django.urls import path
 
-from .views import (AdminApprovalsListView, AdminDashboardStatsView,
-                    AdminGeographicStatsView, AdminMembersListView,
-                    AdminRevenueStatsView)
+from .views import (
+    AdminApprovalsListView,
+    AdminDashboardStatsView,
+    AdminGeographicStatsView,
+    AdminMembersListView,
+    AdminRevenueStatsView,
+)
 
 
 def health_check(request):

@@ -1,7 +1,6 @@
 from django.urls import path
 
-from .views import (AnalyticsView, BusinessMatchingView, ChatbotView,
-                    RecommendationView)
+from .views import AnalyticsView, BusinessMatchingView, ChatbotView, RecommendationView
 
 urlpatterns = [
     path("recommendations/", RecommendationView.as_view(), name="recommendations"),

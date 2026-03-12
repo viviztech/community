@@ -9,8 +9,11 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from .models import Delegate, Event, EventRegistration
-from .serializers import (DelegateSerializer, EventRegistrationSerializer,
-                          EventSerializer)
+from .serializers import (
+    DelegateSerializer,
+    EventRegistrationSerializer,
+    EventSerializer,
+)
 
 
 class EventViewSet(viewsets.ModelViewSet):

@@ -8,9 +8,12 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from .models import Membership, MembershipTier
-from .serializers import (MembershipCreateSerializer,
-                          MembershipRenewSerializer, MembershipSerializer,
-                          MembershipTierSerializer)
+from .serializers import (
+    MembershipCreateSerializer,
+    MembershipRenewSerializer,
+    MembershipSerializer,
+    MembershipTierSerializer,
+)
 
 
 class MembershipTierViewSet(viewsets.ModelViewSet):

@@ -15,9 +15,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Notification, NotificationPreference, NotificationTemplate
-from .serializers import (NotificationPreferenceSerializer,
-                          NotificationSerializer,
-                          NotificationTemplateSerializer)
+from .serializers import (
+    NotificationPreferenceSerializer,
+    NotificationSerializer,
+    NotificationTemplateSerializer,
+)
 
 
 class TwilioService:

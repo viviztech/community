@@ -12,14 +12,16 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.views import (TokenObtainPairView,
-                                            TokenRefreshView)
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .models import User
-from .serializers import (CustomTokenObtainPairSerializer,
-                          PasswordResetConfirmSerializer,
-                          PasswordResetRequestSerializer,
-                          UserRegistrationSerializer, UserSerializer)
+from .serializers import (
+    CustomTokenObtainPairSerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
+    UserRegistrationSerializer,
+    UserSerializer,
+)
 
 User = get_user_model()
 

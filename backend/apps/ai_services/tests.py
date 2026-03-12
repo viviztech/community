@@ -9,8 +9,7 @@ from django.test import RequestFactory, TestCase
 from django.utils import timezone
 from rest_framework.test import APIRequestFactory
 
-from .views import (AnalyticsView, BusinessMatchingView, ChatbotView,
-                    RecommendationView)
+from .views import AnalyticsView, BusinessMatchingView, ChatbotView, RecommendationView
 
 
 @pytest.mark.django_db

@@ -1,7 +1,6 @@
 from django.contrib import admin
 
-from .models import (GeographicArea, GovernmentSchemeBenefit, Member,
-                     SisterConcern)
+from .models import GeographicArea, GovernmentSchemeBenefit, Member, SisterConcern
 
 
 @admin.register(GeographicArea)

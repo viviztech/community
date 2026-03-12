@@ -4,8 +4,7 @@ Serializers for Member models.
 
 from rest_framework import serializers
 
-from .models import (GeographicArea, GovernmentSchemeBenefit, Member,
-                     SisterConcern)
+from .models import GeographicArea, GovernmentSchemeBenefit, Member, SisterConcern
 
 
 class GeographicAreaSerializer(serializers.ModelSerializer):
