@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies
-RUN npm ci --only=production
+RUN npm ci
 
 # Copy source code
 COPY . .
@@ -27,9 +27,6 @@ COPY nginx.conf /etc/nginx/nginx.conf
 
 # Copy built React app
 COPY --from=builder /app/build /usr/share/nginx/html
-
-# Copy static files if exists
-COPY --from=builder /app/build/static /usr/share/nginx/html/static 2>/dev/null || true
 
 # Expose ports
 EXPOSE 80
