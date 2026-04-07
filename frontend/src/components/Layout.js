@@ -38,15 +38,15 @@ import { logout } from '../store/slices/authSlice';
 const drawerWidth = 260;
 
 const menuItems = [
-  { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
-  { text: 'Profile', icon: <PersonIcon />, path: '/profile' },
-  { text: 'Members', icon: <PeopleIcon />, path: '/members' },
-  { text: 'Events', icon: <EventIcon />, path: '/events' },
-  { text: 'Memberships', icon: <MembershipIcon />, path: '/memberships' },
+  { text: 'Dashboard', icon: <DashboardIcon />, path: '/app/dashboard' },
+  { text: 'Profile', icon: <PersonIcon />, path: '/app/profile' },
+  { text: 'Members', icon: <PeopleIcon />, path: '/app/members' },
+  { text: 'Events', icon: <EventIcon />, path: '/app/events' },
+  { text: 'Memberships', icon: <MembershipIcon />, path: '/app/memberships' },
 ];
 
 const adminMenuItems = [
-  { text: 'Admin Panel', icon: <AdminIcon />, path: '/admin' },
+  { text: 'Admin Panel', icon: <AdminIcon />, path: '/app/admin' },
 ];
 
 export default function Layout() {
@@ -93,7 +93,7 @@ export default function Layout() {
         {menuItems.map((item) => (
           <ListItem key={item.text} disablePadding>
             <ListItemButton
-              selected={location.pathname === item.path}
+              selected={location.pathname.startsWith(item.path)}
               onClick={() => {
                 navigate(item.path);
                 if (isMobile) setMobileOpen(false);
@@ -105,7 +105,7 @@ export default function Layout() {
           </ListItem>
         ))}
       </List>
-      
+
       {isAdmin && (
         <>
           <Divider sx={{ my: 1 }} />
@@ -113,7 +113,7 @@ export default function Layout() {
             {adminMenuItems.map((item) => (
               <ListItem key={item.text} disablePadding>
                 <ListItemButton
-                  selected={location.pathname === item.path}
+                  selected={location.pathname.startsWith(item.path)}
                   onClick={() => {
                     navigate(item.path);
                     if (isMobile) setMobileOpen(false);
@@ -187,13 +187,13 @@ export default function Layout() {
               </Typography>
             </MenuItem>
             {isAdmin && (
-              <MenuItem onClick={() => { navigate('/admin'); handleMenuClose(); }}>
+              <MenuItem onClick={() => { navigate('/app/admin'); handleMenuClose(); }}>
                 <ListItemIcon><AdminIcon fontSize="small" /></ListItemIcon>
                 Admin Panel
               </MenuItem>
             )}
             <Divider />
-            <MenuItem onClick={() => { navigate('/profile'); handleMenuClose(); }}>
+            <MenuItem onClick={() => { navigate('/app/profile'); handleMenuClose(); }}>
               <ListItemIcon><PersonIcon fontSize="small" /></ListItemIcon>
               Profile
             </MenuItem>
