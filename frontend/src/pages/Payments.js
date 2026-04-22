@@ -29,19 +29,34 @@ import {
   CheckCircle as CheckCircleIcon,
   Pending as PendingIcon,
 } from '@mui/icons-material';
+import { fetchPayments, initiatePayment } from '../store/slices/paymentsSlice';
 
 export default function Payments() {
+  const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { history = [], loading, error } = useSelector((state) => state.payments || { history: [], loading: false });
+  const { payments = [], loading, error, paymentUrl } = useSelector((state) => state.payments || {});
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState(null);
 
-  const handleInitiatePayment = (paymentData) => {
+  useEffect(() => {
+    dispatch(fetchPayments());
+  }, [dispatch]);
+
+  useEffect(() => {
+    if (paymentUrl) {
+      window.location.href = paymentUrl;
+    }
+  }, [paymentUrl]);
+
+  const openPaymentDialog = (paymentData) => {
     setSelectedPayment(paymentData);
     setPaymentDialogOpen(true);
   };
 
   const handleConfirmPayment = () => {
+    if (selectedPayment) {
+      dispatch(initiatePayment(selectedPayment));
+    }
     setPaymentDialogOpen(false);
   };
 
@@ -91,7 +106,7 @@ export default function Payments() {
                     Total Payments
                   </Typography>
                   <Typography variant="h4" fontWeight={600}>
-                    {history.length || 0}
+                    {payments.length || 0}
                   </Typography>
                 </Box>
               </Box>
@@ -108,7 +123,7 @@ export default function Payments() {
                     Completed
                   </Typography>
                   <Typography variant="h4" fontWeight={600}>
-                    {history.filter(p => p?.status === 'completed').length || 0}
+                    {payments.filter(p => p?.status === 'completed').length || 0}
                   </Typography>
                 </Box>
               </Box>
@@ -125,7 +140,7 @@ export default function Payments() {
                     Pending
                   </Typography>
                   <Typography variant="h4" fontWeight={600}>
-                    {history.filter(p => p?.status === 'pending').length || 0}
+                    {payments.filter(p => p?.status === 'pending').length || 0}
                   </Typography>
                 </Box>
               </Box>
@@ -144,7 +159,7 @@ export default function Payments() {
             <Box display="flex" justifyContent="center" p={4}>
               <CircularProgress />
             </Box>
-          ) : history.length > 0 ? (
+          ) : payments.length > 0 ? (
             <TableContainer>
               <Table>
                 <TableHead>
@@ -157,7 +172,7 @@ export default function Payments() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {history.map((payment) => (
+                  {payments.map((payment) => (
                     <TableRow key={payment.id}>
                       <TableCell>
                         {new Date(payment.created_at).toLocaleDateString('en-IN')}

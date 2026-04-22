@@ -92,6 +92,35 @@ class Notification(models.Model):
         return f"Notification to {self.user.email} - {self.get_status_display()}"
 
 
+class DeviceToken(models.Model):
+    """FCM device tokens for push notifications."""
+
+    class Platform(models.TextChoices):
+        ANDROID = "android", _("Android")
+        IOS = "ios", _("iOS")
+        WEB = "web", _("Web")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="device_tokens",
+    )
+    token = models.TextField(unique=True)
+    platform = models.CharField(max_length=10, choices=Platform.choices)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "device_tokens"
+        verbose_name = _("Device Token")
+        verbose_name_plural = _("Device Tokens")
+
+    def __str__(self):
+        return f"{self.user.email} - {self.platform}"
+
+
 class NotificationPreference(models.Model):
     """User notification preferences."""
 

@@ -258,6 +258,32 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "Asia/Kolkata"
 
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    # SLA: 12 h reminder, 24 h auto-escalation — run every hour to stay within the window
+    "approval-reminders-and-escalations": {
+        "task": "apps.approvals.tasks.check_approval_reminders_and_escalations",
+        "schedule": crontab(minute=0),  # every hour
+    },
+    "membership-expiry-reminders": {
+        "task": "apps.memberships.tasks.send_membership_expiry_reminders",
+        "schedule": crontab(minute=0, hour=9),  # daily at 9 AM IST
+    },
+    "deactivate-expired-memberships": {
+        "task": "apps.memberships.tasks.deactivate_expired_memberships",
+        "schedule": crontab(minute=0, hour=0),  # midnight
+    },
+    "event-reminders": {
+        "task": "apps.notifications.tasks.send_event_reminders",
+        "schedule": crontab(minute=0, hour=10),  # daily at 10 AM IST
+    },
+}
+
+# Firebase Cloud Messaging (FCM) for Push Notifications
+FCM_SERVER_KEY = env("FCM_SERVER_KEY", default="")
+FIREBASE_CREDENTIALS_FILE = env("FIREBASE_CREDENTIALS_FILE", default="")
+
 # CORS Configuration
 CORS_ALLOW_ALL_ORIGINS = DEBUG
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
@@ -350,9 +376,10 @@ AI_RECOMMENDATION_MODEL = env(
 # Site Configuration
 SITE_ID = 1
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:3000")
-ACCOUNT_EMAIL_REQUIRED = True
+SITE_URL = env("SITE_URL", default="http://localhost:8000")
+ACCOUNT_LOGIN_METHODS = {"email"}
+ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
-ACCOUNT_AUTHENTICATION_METHOD = "email"
 ACCOUNT_USERNAME_MIN_LENGTH = 3
 ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_LOGOUT_ON_GET = True

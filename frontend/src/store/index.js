@@ -5,6 +5,7 @@ import eventReducer from './slices/eventSlice';
 import membershipReducer from './slices/membershipSlice';
 import notificationReducer from './slices/notificationSlice';
 import adminReducer from './slices/adminSlice';
+import paymentsReducer from './slices/paymentsSlice';
 
 export const store = configureStore({
   reducer: {
@@ -14,6 +15,7 @@ export const store = configureStore({
     memberships: membershipReducer,
     notifications: notificationReducer,
     admin: adminReducer,
+    payments: paymentsReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

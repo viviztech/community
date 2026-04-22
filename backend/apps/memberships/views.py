@@ -78,8 +78,16 @@ class MembershipViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def certificate(self, request, pk=None):
-        """Get membership certificate details."""
+        """Get membership certificate as JSON or PDF."""
         membership = self.get_object()
+
+        if not membership.certificate_number:
+            membership.generate_certificate()
+            membership.save()
+
+        if request.query_params.get("format") == "pdf":
+            return self._generate_certificate_pdf(membership)
+
         return Response(
             {
                 "certificate_number": membership.certificate_number,
@@ -90,6 +98,71 @@ class MembershipViewSet(viewsets.ModelViewSet):
                 "issued_at": membership.certificate_issued_at,
             }
         )
+
+    def _generate_certificate_pdf(self, membership):
+        """Generate a PDF membership certificate."""
+        from io import BytesIO
+
+        from django.http import HttpResponse
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.units import cm
+        from reportlab.pdfgen import canvas
+
+        buffer = BytesIO()
+        width, height = landscape(A4)
+        c = canvas.Canvas(buffer, pagesize=landscape(A4))
+
+        # Background
+        c.setFillColor(colors.HexColor("#1a1a2e"))
+        c.rect(0, 0, width, height, fill=True, stroke=False)
+
+        # Border
+        c.setStrokeColor(colors.HexColor("#f0a500"))
+        c.setLineWidth(4)
+        c.rect(1*cm, 1*cm, width - 2*cm, height - 2*cm, fill=False, stroke=True)
+
+        # Title
+        c.setFont("Helvetica-Bold", 32)
+        c.setFillColor(colors.HexColor("#f0a500"))
+        c.drawCentredString(width / 2, height - 4*cm, "ACTIV")
+
+        c.setFont("Helvetica", 16)
+        c.setFillColor(colors.white)
+        c.drawCentredString(width / 2, height - 5*cm, "Adidravidar Confederation of Trade and Industrial Vision")
+
+        c.setFont("Helvetica-Bold", 22)
+        c.setFillColor(colors.HexColor("#f0a500"))
+        c.drawCentredString(width / 2, height - 7*cm, "Certificate of Membership")
+
+        # Member details
+        c.setFont("Helvetica", 14)
+        c.setFillColor(colors.white)
+        c.drawCentredString(width / 2, height - 9*cm, "This is to certify that")
+
+        c.setFont("Helvetica-Bold", 20)
+        c.setFillColor(colors.HexColor("#f0a500"))
+        c.drawCentredString(width / 2, height - 10.5*cm, membership.member.user.full_name)
+
+        c.setFont("Helvetica", 14)
+        c.setFillColor(colors.white)
+        c.drawCentredString(width / 2, height - 12*cm, f"is a registered member under the {membership.tier.name} tier")
+
+        start = membership.start_date.strftime("%d %B %Y")
+        end = membership.end_date.strftime("%d %B %Y") if membership.end_date else "Lifetime"
+        c.drawCentredString(width / 2, height - 13*cm, f"Valid from {start} to {end}")
+
+        # Certificate number
+        c.setFont("Helvetica", 11)
+        c.setFillColor(colors.HexColor("#aaaaaa"))
+        c.drawCentredString(width / 2, 3*cm, f"Certificate No: {membership.certificate_number}")
+
+        c.save()
+        buffer.seek(0)
+
+        response = HttpResponse(buffer.read(), content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="certificate_{membership.certificate_number}.pdf"'
+        return response
 
     @action(detail=False, methods=["post"], url_path="apply")
     def apply_for_membership(self, request):

@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Users, Calendar, Award, Heart, Target, Zap } from 'lucide-react';
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
 
 const HeroSection = () => {
   return (
@@ -210,29 +212,19 @@ const AboutPreview = () => {
 };
 
 const EventsPreview = () => {
-  const events = [
-    {
-      id: 1,
-      title: 'Annual Community Meetup',
-      date: 'March 15, 2026',
-      category: 'Networking',
-      description: 'Join us for our biggest annual gathering.',
-    },
-    {
-      id: 2,
-      title: 'Leadership Workshop',
-      date: 'April 5, 2026',
-      category: 'Workshop',
-      description: 'Develop essential leadership skills.',
-    },
-    {
-      id: 3,
-      title: 'Community Service Day',
-      date: 'April 20, 2026',
-      category: 'Social',
-      description: 'Give back to the community together.',
-    },
-  ];
+  const [events, setEvents] = useState([]);
+
+  useEffect(() => {
+    fetch(`${API_URL}/events/?status=published&page_size=3`)
+      .then((r) => r.json())
+      .then((data) => {
+        const results = data.results || data;
+        if (Array.isArray(results) && results.length > 0) {
+          setEvents(results.slice(0, 3));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   return (
     <section className="py-20 bg-white">
@@ -247,7 +239,7 @@ const EventsPreview = () => {
         </div>
         
         <div className="grid md:grid-cols-3 gap-8">
-          {events.map((event) => (
+          {events.length > 0 ? events.map((event) => (
             <div
               key={event.id}
               className="group bg-white rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 border border-gray-100 overflow-hidden"
@@ -255,16 +247,25 @@ const EventsPreview = () => {
               <div className="h-3 bg-gradient-to-r from-blue-500 to-blue-700"></div>
               <div className="p-6">
                 <div className="inline-block px-3 py-1 bg-blue-100 text-blue-600 text-sm font-medium rounded-full mb-4">
-                  {event.category}
+                  {event.category || 'Event'}
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 mb-2 group-hover:text-blue-600 transition-colors">
                   {event.title}
                 </h3>
-                <p className="text-gray-600 mb-4">{event.description}</p>
+                <p className="text-gray-600 mb-4 line-clamp-2">{event.description}</p>
                 <div className="flex items-center text-gray-500 text-sm">
                   <Calendar className="w-4 h-4 mr-2" />
-                  {event.date}
+                  {event.event_date ? new Date(event.event_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : 'TBD'}
                 </div>
+              </div>
+            </div>
+          )) : [1, 2, 3].map((i) => (
+            <div key={i} className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden animate-pulse">
+              <div className="h-3 bg-blue-200"></div>
+              <div className="p-6">
+                <div className="h-4 bg-gray-200 rounded w-24 mb-4"></div>
+                <div className="h-6 bg-gray-200 rounded w-full mb-2"></div>
+                <div className="h-4 bg-gray-100 rounded w-3/4"></div>
               </div>
             </div>
           ))}

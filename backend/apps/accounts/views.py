@@ -14,8 +14,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from .models import User
+from .models import AdminProfile, User
+from .permissions import IsAnyAdmin, IsDistrictAdmin, IsSuperAdmin, IsStateAdmin
 from .serializers import (
+    AdminNominationSerializer,
+    AdminProfileSerializer,
+    AdminRevokeSerializer,
     CustomTokenObtainPairSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
@@ -39,10 +43,15 @@ class UserRegistrationView(APIView):
             # Send welcome email
             self._send_welcome_email(user)
 
+            from rest_framework_simplejwt.tokens import RefreshToken
+            refresh = RefreshToken.for_user(user)
+
             return Response(
                 {
                     "message": "User registered successfully.",
                     "user": UserSerializer(user).data,
+                    "access": str(refresh.access_token),
+                    "refresh": str(refresh),
                 },
                 status=status.HTTP_201_CREATED,
             )
@@ -220,11 +229,12 @@ class PasswordResetConfirmView(APIView):
     def post(self, request):
         serializer = PasswordResetConfirmSerializer(data=request.data)
         if serializer.is_valid():
+            uid_encoded = serializer.validated_data["uid"]
             token = serializer.validated_data["token"]
             password = serializer.validated_data["password"]
 
             try:
-                uid = urlsafe_base64_decode(token).decode()
+                uid = urlsafe_base64_decode(uid_encoded).decode()
                 user = User.objects.get(pk=uid)
 
                 if default_token_generator.check_token(user, token):
@@ -232,11 +242,11 @@ class PasswordResetConfirmView(APIView):
                     user.save()
                     return Response({"message": "Password reset successful."})
                 return Response(
-                    {"error": "Invalid token."}, status=status.HTTP_400_BAD_REQUEST
+                    {"error": "Invalid or expired token."}, status=status.HTTP_400_BAD_REQUEST
                 )
             except (User.DoesNotExist, ValueError):
                 return Response(
-                    {"error": "Invalid token."}, status=status.HTTP_400_BAD_REQUEST
+                    {"error": "Invalid reset link."}, status=status.HTTP_400_BAD_REQUEST
                 )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -284,21 +294,301 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
+class OTPSendView(APIView):
+    """Send OTP to a user's phone number."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        if not user.phone_number:
+            return Response(
+                {"error": "No phone number on file. Update your profile first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        otp = user.generate_otp()
+
+        # Send via SMS
+        try:
+            from apps.notifications.views import TwilioService
+            TwilioService.send_sms(str(user.phone_number), f"Your ACTIV OTP is: {otp}. Valid for 10 minutes.")
+        except Exception:
+            pass
+
+        return Response({"message": "OTP sent to your registered phone number."})
+
+
+class OTPVerifyView(APIView):
+    """Verify OTP submitted by user."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        otp = request.data.get("otp")
+        if not otp:
+            return Response(
+                {"error": "OTP is required."}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if request.user.verify_otp(otp):
+            return Response({"message": "Phone number verified successfully."})
+
+        return Response(
+            {"error": "Invalid or expired OTP."}, status=status.HTTP_400_BAD_REQUEST
+        )
+
+
 class SocialLoginView(APIView):
-    """Handle social media login."""
+    """Handle social media login (Google / Facebook)."""
 
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        """Process social login."""
-        provider = request.data.get("provider")
+        provider = request.data.get("provider", "").lower()
         access_token = request.data.get("access_token")
 
-        # In production, use python-social-auth or directly verify token
-        # For now, return a placeholder response
+        if not provider or not access_token:
+            return Response(
+                {"error": "provider and access_token are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user_info = self._verify_token(provider, access_token)
+        if not user_info:
+            return Response(
+                {"error": "Invalid or expired access token."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        email = user_info.get("email")
+        if not email:
+            return Response(
+                {"error": "Could not retrieve email from provider."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Get or create user
+        user, created = User.objects.get_or_create(
+            email=email,
+            defaults={
+                "first_name": user_info.get("given_name", ""),
+                "last_name": user_info.get("family_name", ""),
+                "social_provider": provider,
+                "social_user_id": user_info.get("sub") or user_info.get("id", ""),
+                "email_verified": True,
+                "username": email,
+            },
+        )
+
+        if not created:
+            user.social_provider = provider
+            user.social_user_id = user_info.get("sub") or user_info.get("id", "")
+            user.save(update_fields=["social_provider", "social_user_id"])
+
+        from rest_framework_simplejwt.tokens import RefreshToken
+        refresh = RefreshToken.for_user(user)
+
         return Response(
             {
-                "message": "Social login integration - Configure provider credentials",
-                "provider": provider,
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user": UserSerializer(user).data,
+                "created": created,
             }
         )
+
+    def _verify_token(self, provider, access_token):
+        """Verify token with the provider and return user info dict."""
+        import requests as req
+        try:
+            if provider == "google":
+                resp = req.get(
+                    "https://www.googleapis.com/oauth2/v3/userinfo",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    return resp.json()
+
+            elif provider == "facebook":
+                resp = req.get(
+                    "https://graph.facebook.com/me",
+                    params={"fields": "id,name,email,first_name,last_name", "access_token": access_token},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    data["sub"] = data.get("id")
+                    data["given_name"] = data.get("first_name", "")
+                    data["family_name"] = data.get("last_name", "")
+                    return data
+        except Exception:
+            pass
+        return None
+
+
+# ──────────────────────────────────────────────
+#  Admin Role / Nomination Management
+# ──────────────────────────────────────────────
+
+class AdminNominateView(APIView):
+    """
+    Nominate a user as an admin.
+    - Super Admin can nominate any level.
+    - State Admin can nominate District or Block admins within their state.
+    - District Admin can nominate Block admins within their district.
+    """
+
+    permission_classes = [IsAnyAdmin]
+
+    def post(self, request):
+        serializer = AdminNominationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        nominator = request.user
+        nominator_admin = getattr(nominator, "admin_profile", None)
+        is_super = nominator.is_superuser or (nominator_admin and nominator_admin.admin_level == "super")
+
+        target_level = data["admin_level"]
+
+        # Enforce nomination hierarchy
+        if not is_super:
+            if nominator_admin is None or nominator_admin.status != "active":
+                return Response({"error": "Your admin role is not active."}, status=status.HTTP_403_FORBIDDEN)
+            level_rank = {"block": 1, "district": 2, "state": 3, "super": 4}
+            if level_rank.get(target_level, 0) >= level_rank.get(nominator_admin.admin_level, 0):
+                return Response(
+                    {"error": f"A {nominator_admin.get_admin_level_display()} can only nominate lower-level admins."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        # Find target user
+        try:
+            target_user = User.objects.get(pk=data["user_id"])
+        except User.DoesNotExist:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if target_user.is_superuser:
+            return Response({"error": "Cannot assign an admin role to a superuser."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Area validation
+        area = None
+        if target_level != "super":
+            area_id = data.get("area_id")
+            if not area_id:
+                return Response({"error": "area_id is required for non-super admin levels."}, status=status.HTTP_400_BAD_REQUEST)
+            from apps.members.models import GeographicArea
+            try:
+                area = GeographicArea.objects.get(pk=area_id, is_active=True)
+            except GeographicArea.DoesNotExist:
+                return Response({"error": "Geographic area not found."}, status=status.HTTP_404_NOT_FOUND)
+
+            area_type_map = {"block": "block", "district": "district", "state": "state"}
+            if area.area_type != area_type_map[target_level]:
+                return Response(
+                    {"error": f"Area type mismatch: expected {area_type_map[target_level]}, got {area.area_type}."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        # Remove any existing admin profile before creating new (OneToOne constraint)
+        existing = getattr(target_user, "admin_profile", None)
+        if existing:
+            existing.delete()
+
+        admin_profile = AdminProfile.objects.create(
+            user=target_user,
+            admin_level=target_level,
+            area=area,
+            nominated_by=nominator,
+            nomination_notes=data.get("nomination_notes", ""),
+            status=AdminProfile.Status.PENDING,
+        )
+
+        # Super admin nominations are auto-activated if nominator is superuser
+        if is_super and nominator.is_superuser:
+            admin_profile.activate(approved_by_user=nominator)
+
+        return Response(AdminProfileSerializer(admin_profile).data, status=status.HTTP_201_CREATED)
+
+
+class AdminApproveView(APIView):
+    """Approve a pending admin nomination."""
+
+    permission_classes = [IsAnyAdmin]
+
+    def post(self, request, pk):
+        try:
+            admin_profile = AdminProfile.objects.get(pk=pk, status=AdminProfile.Status.PENDING)
+        except AdminProfile.DoesNotExist:
+            return Response({"error": "Pending admin profile not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        approver = request.user
+        approver_admin = getattr(approver, "admin_profile", None)
+        is_super = approver.is_superuser or (approver_admin and approver_admin.admin_level == "super")
+
+        if not is_super:
+            level_rank = {"block": 1, "district": 2, "state": 3, "super": 4}
+            if level_rank.get(admin_profile.admin_level, 0) >= level_rank.get(getattr(approver_admin, "admin_level", "block"), 0):
+                return Response({"error": "You do not have permission to approve this nomination."}, status=status.HTTP_403_FORBIDDEN)
+
+        admin_profile.activate(approved_by_user=approver)
+        return Response(AdminProfileSerializer(admin_profile).data)
+
+
+class AdminRevokeView(APIView):
+    """Revoke an active admin role."""
+
+    permission_classes = [IsAnyAdmin]
+
+    def post(self, request, pk):
+        try:
+            admin_profile = AdminProfile.objects.get(pk=pk, status=AdminProfile.Status.ACTIVE)
+        except AdminProfile.DoesNotExist:
+            return Response({"error": "Active admin profile not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        approver = request.user
+        approver_admin = getattr(approver, "admin_profile", None)
+        is_super = approver.is_superuser or (approver_admin and approver_admin.admin_level == "super")
+
+        if not is_super:
+            level_rank = {"block": 1, "district": 2, "state": 3, "super": 4}
+            if level_rank.get(admin_profile.admin_level, 0) >= level_rank.get(getattr(approver_admin, "admin_level", "block"), 0):
+                return Response({"error": "You do not have permission to revoke this admin."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = AdminRevokeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        admin_profile.revoke(reason=serializer.validated_data.get("revoke_reason", ""))
+        return Response(AdminProfileSerializer(admin_profile).data)
+
+
+class AdminListView(APIView):
+    """List all admin profiles visible to the requesting admin."""
+
+    permission_classes = [IsAnyAdmin]
+
+    def get(self, request):
+        user = request.user
+        queryset = AdminProfile.objects.select_related("user", "area", "nominated_by").all()
+
+        if not user.is_superuser:
+            admin = getattr(user, "admin_profile", None)
+            if admin and admin.status == "active":
+                if admin.admin_level == "state":
+                    # State admin sees district + block admins in their state's sub-areas
+                    queryset = queryset.filter(admin_level__in=["district", "block"])
+                elif admin.admin_level == "district":
+                    queryset = queryset.filter(admin_level="block")
+                else:
+                    return Response([])
+
+        status_filter = request.query_params.get("status")
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+
+        level_filter = request.query_params.get("level")
+        if level_filter:
+            queryset = queryset.filter(admin_level=level_filter)
+
+        return Response(AdminProfileSerializer(queryset, many=True).data)

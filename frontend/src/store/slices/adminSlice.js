@@ -52,6 +52,19 @@ export const fetchGeographicStats = createAsyncThunk('admin/fetchGeographic', as
   }
 });
 
+export const processApproval = createAsyncThunk('admin/processApproval', async ({ workflowId, action, comments }, { rejectWithValue }) => {
+  try {
+    const response = await axios.post(
+      `${API_URL}/approvals/${workflowId}/process_action/`,
+      { action, comments },
+      getAuthHeader(),
+    );
+    return response.data;
+  } catch (error) {
+    return rejectWithValue(error.response?.data || 'Failed to process approval');
+  }
+});
+
 const initialState = {
   stats: null,
   members: [],

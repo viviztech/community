@@ -6,6 +6,8 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -42,7 +44,13 @@ class GeographicArea(models.Model):
 class Member(models.Model):
     """
     Member model extending User with detailed profile information.
+    Supports three member types: Individual, SHG, FPO.
     """
+
+    class MemberType(models.TextChoices):
+        INDIVIDUAL = "individual", _("Individual")
+        SHG = "shg", _("Self Help Group (SHG)")
+        FPO = "fpo", _("Farmer Producer Organisation (FPO)")
 
     class SocialCategory(models.TextChoices):
         SC = "SC", _("Scheduled Caste")
@@ -81,6 +89,13 @@ class Member(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="member_profile",
+    )
+
+    # Member Type
+    member_type = models.CharField(
+        max_length=20,
+        choices=MemberType.choices,
+        default=MemberType.INDIVIDUAL,
     )
 
     # Personal Details
@@ -163,9 +178,40 @@ class Member(models.Model):
         max_length=10, choices=TurnoverRange.choices, null=True, blank=True
     )
 
+    # ── SHG-specific fields ─────────────────────────────────────────────────
+    shg_name = models.CharField(max_length=255, null=True, blank=True)
+    shg_registration_number = models.CharField(max_length=100, null=True, blank=True)
+    shg_formation_date = models.DateField(null=True, blank=True)
+    shg_member_count = models.PositiveIntegerField(null=True, blank=True)
+    shg_bank_linked = models.BooleanField(default=False)
+    shg_bank_name = models.CharField(max_length=100, null=True, blank=True)
+    shg_bank_account_number = models.CharField(max_length=50, null=True, blank=True)
+    shg_promoting_institution = models.CharField(max_length=255, null=True, blank=True)
+    shg_federation_name = models.CharField(max_length=255, null=True, blank=True)
+
+    # ── FPO-specific fields ─────────────────────────────────────────────────
+    fpo_name = models.CharField(max_length=255, null=True, blank=True)
+    fpo_registration_number = models.CharField(max_length=100, null=True, blank=True)
+    fpo_registration_date = models.DateField(null=True, blank=True)
+    fpo_farmer_count = models.PositiveIntegerField(null=True, blank=True)
+    fpo_total_land_area_acres = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True
+    )
+    fpo_crop_types = models.TextField(null=True, blank=True)
+    fpo_annual_turnover = models.DecimalField(
+        max_digits=14, decimal_places=2, null=True, blank=True
+    )
+    fpo_ceo_name = models.CharField(max_length=255, null=True, blank=True)
+    fpo_ceo_phone = models.CharField(max_length=15, null=True, blank=True)
+    fpo_commodity = models.CharField(max_length=255, null=True, blank=True)
+
     # Other Memberships
     member_of_other_chambers = models.BooleanField(default=False)
     other_chamber_details = models.TextField(null=True, blank=True)
+
+    # Approval
+    is_approved = models.BooleanField(default=False)
+    approved_at = models.DateTimeField(null=True, blank=True)
 
     # Profile Completeness
     profile_completion_percentage = models.IntegerField(default=0)
@@ -185,14 +231,15 @@ class Member(models.Model):
             models.Index(fields=["block", "district", "state"]),
             models.Index(fields=["social_category"]),
             models.Index(fields=["is_doing_business"]),
+            models.Index(fields=["member_type"]),
         ]
 
     def __str__(self):
         return f"{self.user.full_name} ({self.user.email})"
 
     def calculate_profile_completion(self):
-        """Calculate profile completion percentage."""
-        fields = [
+        """Calculate profile completion percentage, type-aware."""
+        common_fields = [
             "date_of_birth",
             "gender",
             "social_category",
@@ -201,23 +248,37 @@ class Member(models.Model):
             "district",
             "state",
             "pincode",
-            "educational_qualification",
-            "organization_name",
-            "constitution",
-            "business_type",
             "pan_number",
-            "gst_number",
         ]
 
-        completed = 0
-        total = len(fields)
+        if self.member_type == self.MemberType.SHG:
+            type_fields = [
+                "shg_name",
+                "shg_registration_number",
+                "shg_formation_date",
+                "shg_member_count",
+                "shg_promoting_institution",
+            ]
+        elif self.member_type == self.MemberType.FPO:
+            type_fields = [
+                "fpo_name",
+                "fpo_registration_number",
+                "fpo_farmer_count",
+                "fpo_crop_types",
+                "fpo_commodity",
+            ]
+        else:
+            type_fields = [
+                "educational_qualification",
+                "organization_name",
+                "constitution",
+                "business_type",
+                "gst_number",
+            ]
 
-        for field in fields:
-            value = getattr(self, field, None)
-            if value:
-                completed += 1
-
-        percentage = int((completed / total) * 100)
+        fields = common_fields + type_fields
+        completed = sum(1 for f in fields if getattr(self, f, None))
+        percentage = int((completed / len(fields)) * 100)
         self.profile_completion_percentage = percentage
 
         if percentage >= 80:
@@ -269,3 +330,90 @@ class GovernmentSchemeBenefit(models.Model):
 
     def __str__(self):
         return f"{self.scheme_name} ({self.member.user.full_name})"
+
+
+class MemberDocument(models.Model):
+    """Documents uploaded by members (Aadhaar, PAN, GST, Udyam, etc.)."""
+
+    class DocumentType(models.TextChoices):
+        AADHAAR = "aadhaar", _("Aadhaar Card")
+        PAN = "pan", _("PAN Card")
+        GST_CERTIFICATE = "gst", _("GST Certificate")
+        UDYAM_CERTIFICATE = "udyam", _("Udyam Registration Certificate")
+        BUSINESS_REGISTRATION = "business_reg", _("Business Registration")
+        ITR = "itr", _("Income Tax Return")
+        # SHG documents
+        SHG_REGISTRATION = "shg_reg", _("SHG Registration Certificate")
+        SHG_BANK_PASSBOOK = "shg_bank", _("SHG Bank Passbook")
+        SHG_MEMBER_LIST = "shg_members", _("SHG Member List")
+        # FPO documents
+        FPO_REGISTRATION = "fpo_reg", _("FPO Registration Certificate")
+        FPO_BYLAW = "fpo_bylaw", _("FPO By-Laws")
+        FPO_SHAREHOLDER_LIST = "fpo_shareholders", _("FPO Shareholder List")
+        OTHER = "other", _("Other")
+
+    class Status(models.TextChoices):
+        PENDING = "pending", _("Pending Review")
+        VERIFIED = "verified", _("Verified")
+        REJECTED = "rejected", _("Rejected")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    member = models.ForeignKey(Member, on_delete=models.CASCADE, related_name="documents")
+    document_type = models.CharField(max_length=20, choices=DocumentType.choices)
+    file = models.FileField(upload_to="member_documents/")
+    original_filename = models.CharField(max_length=255, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    notes = models.TextField(blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_documents",
+    )
+
+    class Meta:
+        db_table = "member_documents"
+        verbose_name = _("Member Document")
+        verbose_name_plural = _("Member Documents")
+        ordering = ["-uploaded_at"]
+
+    def __str__(self):
+        return f"{self.get_document_type_display()} - {self.member.user.full_name}"
+
+
+@receiver(post_save, sender=settings.AUTH_USER_MODEL)
+def auto_create_member_profile(sender, instance, created, **kwargs):
+    """Auto-create a Member profile whenever a new User registers."""
+    if created and not instance.is_superuser and not instance.is_staff:
+        Member.objects.get_or_create(user=instance)
+
+
+@receiver(post_save, sender=Member)
+def update_profile_completion(sender, instance, **kwargs):
+    """Recalculate profile completion after every save."""
+    new_pct = instance.calculate_profile_completion()
+    Member.objects.filter(pk=instance.pk).update(
+        profile_completion_percentage=new_pct,
+        profile_completed_at=instance.profile_completed_at,
+    )
+
+
+@receiver(post_save, sender=Member)
+def auto_create_approval_workflow(sender, instance, created, **kwargs):
+    """Auto-create an ApprovalWorkflow when a new member profile is created."""
+    if created:
+        try:
+            from apps.approvals.models import ApprovalWorkflow
+            ApprovalWorkflow.objects.get_or_create(
+                member=instance,
+                is_active=True,
+                defaults={
+                    "status": ApprovalWorkflow.Status.PENDING,
+                    "current_level": ApprovalWorkflow.Level.BLOCK,
+                },
+            )
+        except Exception as e:
+            print(f"Failed to create approval workflow: {e}")

@@ -4,6 +4,7 @@ User and Authentication Models for ACTIV Membership Portal.
 
 import uuid
 
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 from django.utils import timezone
@@ -19,6 +20,8 @@ class UserManager(BaseUserManager):
         if not email:
             raise ValueError(_("The Email field must be set"))
         email = self.normalize_email(email)
+        # username must be unique — use email as username (truncated to 150 chars)
+        extra_fields.setdefault("username", email[:150])
         user = self.model(email=email, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
@@ -113,3 +116,82 @@ class User(AbstractUser):
         self.deleted_at = timezone.now()
         self.is_active = False
         self.save(update_fields=["is_deleted", "deleted_at", "is_active"])
+
+
+class AdminProfile(models.Model):
+    """
+    Explicit role record for Block / District / State / Super admins.
+    A user can hold at most one admin role at a time.
+    Nominated by a higher-level admin and activated once approved.
+    """
+
+    class AdminLevel(models.TextChoices):
+        BLOCK = "block", _("Block Admin")
+        DISTRICT = "district", _("District Admin")
+        STATE = "state", _("State Admin")
+        SUPER = "super", _("Super Admin")
+
+    class Status(models.TextChoices):
+        PENDING = "pending", _("Pending Approval")
+        ACTIVE = "active", _("Active")
+        REVOKED = "revoked", _("Revoked")
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="admin_profile",
+    )
+    admin_level = models.CharField(max_length=10, choices=AdminLevel.choices)
+    area = models.ForeignKey(
+        "members.GeographicArea",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="admins",
+        help_text="The geographic area this admin is responsible for (null for Super Admin)",
+    )
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.PENDING
+    )
+    nominated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="nominations_made",
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="nominations_approved",
+    )
+    nomination_notes = models.TextField(blank=True)
+    activated_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revoke_reason = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "admin_profiles"
+        verbose_name = _("Admin Profile")
+        verbose_name_plural = _("Admin Profiles")
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user.email} — {self.get_admin_level_display()} ({self.get_status_display()})"
+
+    def activate(self, approved_by_user):
+        self.status = self.Status.ACTIVE
+        self.approved_by = approved_by_user
+        self.activated_at = timezone.now()
+        self.save(update_fields=["status", "approved_by", "activated_at", "updated_at"])
+
+    def revoke(self, reason=""):
+        self.status = self.Status.REVOKED
+        self.revoked_at = timezone.now()
+        self.revoke_reason = reason
+        self.save(update_fields=["status", "revoked_at", "revoke_reason", "updated_at"])

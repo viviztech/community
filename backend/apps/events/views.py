@@ -116,10 +116,14 @@ class EventRegistrationViewSet(viewsets.ModelViewSet):
     def ticket(self, request, pk=None):
         """Get ticket details."""
         registration = self.get_object()
+        qr_image_url = None
+        if registration.qr_code_image:
+            qr_image_url = request.build_absolute_uri(registration.qr_code_image.url)
         return Response(
             {
                 "ticket_number": registration.ticket_number,
                 "qr_code": registration.qr_code,
+                "qr_code_image_url": qr_image_url,
                 "event": EventSerializer(registration.event).data,
                 "member": registration.member.user.full_name,
                 "delegates": DelegateSerializer(

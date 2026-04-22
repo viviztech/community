@@ -34,7 +34,7 @@ import {
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { fetchDashboardStats, fetchAdminMembers, fetchAdminApprovals, fetchGeographicStats } from '../store/slices/adminSlice';
+import { fetchDashboardStats, fetchAdminMembers, fetchAdminApprovals, fetchGeographicStats, processApproval } from '../store/slices/adminSlice';
 
 const StatCard = ({ title, value, icon, color, subtitle, onClick }) => (
   <Card sx={{ cursor: onClick ? 'pointer' : 'default' }} onClick={onClick}>
@@ -61,10 +61,17 @@ const StatCard = ({ title, value, icon, color, subtitle, onClick }) => (
   </Card>
 );
 
+const ROLE_LABELS = {
+  block: 'Block Admin',
+  district: 'District Admin',
+  state: 'State Admin',
+  super: 'Super Admin',
+};
+
 export default function AdminDashboard() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { user } = useSelector((state) => state.auth);
+  const { user, adminRole } = useSelector((state) => state.auth);
   const { stats, members, membersTotal, approvals, approvalsTotal, geographic, loading } = useSelector((state) => state.admin);
   const [tabValue, setTabValue] = useState(0);
   const [search, setSearch] = useState('');
@@ -92,6 +99,13 @@ export default function AdminDashboard() {
     dispatch(fetchAdminMembers({ search: e.target.value }));
   };
 
+  const handleApprovalAction = (workflowId, action, comments = '') => {
+    dispatch(processApproval({ workflowId, action, comments })).then(() => {
+      dispatch(fetchAdminApprovals());
+      dispatch(fetchDashboardStats());
+    });
+  };
+
   if (loading && !stats) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
@@ -104,16 +118,32 @@ export default function AdminDashboard() {
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
         <Box>
-          <Typography variant="h4" fontWeight={600} gutterBottom>
-            Admin Dashboard
-          </Typography>
+          <Box display="flex" alignItems="center" gap={1} mb={0.5}>
+            <Typography variant="h4" fontWeight={600}>
+              Admin Dashboard
+            </Typography>
+            {adminRole && (
+              <Chip
+                label={ROLE_LABELS[adminRole] || adminRole}
+                color="primary"
+                size="small"
+              />
+            )}
+          </Box>
           <Typography color="text.secondary">
-            Manage members, approvals, and view analytics
+            {user?.admin_area ? `Managing: ${user.admin_area}` : 'Manage members, approvals, and view analytics'}
           </Typography>
         </Box>
-        <Button variant="outlined" startIcon={<RefreshIcon />} onClick={handleRefresh}>
-          Refresh
-        </Button>
+        <Box display="flex" gap={1}>
+          {(adminRole === 'state' || adminRole === 'super' || user?.is_superuser) && (
+            <Button variant="outlined" onClick={() => navigate('/app/admin/nominations')}>
+              Manage Admins
+            </Button>
+          )}
+          <Button variant="outlined" startIcon={<RefreshIcon />} onClick={handleRefresh}>
+            Refresh
+          </Button>
+        </Box>
       </Box>
 
       {/* Stats Cards */}
@@ -341,8 +371,26 @@ export default function AdminDashboard() {
                         </TableCell>
                         <TableCell>{new Date(approval.created_at).toLocaleDateString('en-IN')}</TableCell>
                         <TableCell align="right">
-                          <Button size="small" color="success">Approve</Button>
-                          <Button size="small" color="error">Reject</Button>
+                          <Button
+                            size="small"
+                            color="success"
+                            variant="contained"
+                            sx={{ mr: 1 }}
+                            onClick={() => handleApprovalAction(approval.id, 'approve')}
+                          >
+                            Approve
+                          </Button>
+                          <Button
+                            size="small"
+                            color="error"
+                            variant="outlined"
+                            onClick={() => {
+                              const reason = window.prompt('Reason for rejection (optional):') || '';
+                              handleApprovalAction(approval.id, 'reject', reason);
+                            }}
+                          >
+                            Reject
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}

@@ -63,6 +63,13 @@ class ApprovalActionCreateSerializer(serializers.Serializer):
 class EscalationRuleSerializer(serializers.ModelSerializer):
     """Serializer for escalation rules."""
 
+    level_display = serializers.CharField(source="get_level_display", read_only=True)
+
     class Meta:
         model = EscalationRule
-        fields = ["id", "level", "hours_to_escalate", "is_active"]
+        fields = [
+            "id", "level", "level_display",
+            "hours_to_remind", "hours_to_escalate",
+            "notify_via_email", "notify_via_sms", "notify_via_whatsapp",
+            "is_active",
+        ]

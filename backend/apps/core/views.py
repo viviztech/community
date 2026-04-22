@@ -18,6 +18,25 @@ from apps.memberships.models import Membership, MembershipTier
 from apps.payments.models import Payment
 
 
+def _admin_member_queryset(user, base_qs=None):
+    """Return Member queryset scoped to the admin's geographic area."""
+    if base_qs is None:
+        base_qs = Member.objects.all()
+    if user.is_superuser:
+        return base_qs
+    admin = getattr(user, "admin_profile", None)
+    if admin and admin.status == "active":
+        if admin.admin_level in ("super",):
+            return base_qs
+        if admin.admin_level == "state" and admin.area:
+            return base_qs.filter(state=admin.area)
+        if admin.admin_level == "district" and admin.area:
+            return base_qs.filter(district=admin.area)
+        if admin.admin_level == "block" and admin.area:
+            return base_qs.filter(block=admin.area)
+    return base_qs.none()
+
+
 class AdminDashboardStatsView(APIView):
     """Get admin dashboard statistics."""
 
@@ -27,34 +46,18 @@ class AdminDashboardStatsView(APIView):
         user = request.user
         stats = {}
 
-        # Check if user is admin
+        # Check if user is admin via explicit AdminProfile or superuser flag
         is_superadmin = user.is_superuser
-        has_admin_area = hasattr(user, "member_profile") and (
-            user.member_profile.block
-            or user.member_profile.district
-            or user.member_profile.state
-        )
+        admin_profile = getattr(user, "admin_profile", None)
+        is_any_admin = is_superadmin or (admin_profile and admin_profile.status == "active")
 
-        if not (is_superadmin or has_admin_area):
+        if not is_any_admin:
             return Response(
                 {"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN
             )
 
         # Base queryset based on admin level
-        member_queryset = Member.objects.all()
-        if not is_superadmin:
-            if user.member_profile.block:
-                member_queryset = member_queryset.filter(
-                    block=user.member_profile.block
-                )
-            elif user.member_profile.district:
-                member_queryset = member_queryset.filter(
-                    district=user.member_profile.district
-                )
-            elif user.member_profile.state:
-                member_queryset = member_queryset.filter(
-                    state=user.member_profile.state
-                )
+        member_queryset = _admin_member_queryset(user)
 
         # Total members
         stats["total_members"] = member_queryset.count()
@@ -66,17 +69,16 @@ class AdminDashboardStatsView(APIView):
         pending_approvals = ApprovalWorkflow.objects.filter(
             status="pending", is_active=True
         )
-        if not is_superadmin:
-            if user.member_profile.block:
+        if not is_superadmin and admin_profile and admin_profile.status == "active":
+            if admin_profile.admin_level == "block" and admin_profile.area:
                 pending_approvals = pending_approvals.filter(
-                    member__block=user.member_profile.block, current_level="block"
+                    member__block=admin_profile.area, current_level="block"
                 )
-            elif user.member_profile.district:
+            elif admin_profile.admin_level == "district" and admin_profile.area:
                 pending_approvals = pending_approvals.filter(
-                    member__district=user.member_profile.district,
-                    current_level="district",
+                    member__district=admin_profile.area, current_level="district"
                 )
-            elif user.member_profile.state:
+            elif admin_profile.admin_level == "state" and admin_profile.area:
                 pending_approvals = pending_approvals.filter(current_level="state")
         stats["pending_approvals"] = pending_approvals.count()
 
@@ -161,21 +163,14 @@ class AdminMembersListView(APIView):
 
     def get(self, request):
         user = request.user
-        if not (user.is_superuser or hasattr(user, "member_profile")):
+        admin_profile = getattr(user, "admin_profile", None)
+        is_any_admin = user.is_superuser or (admin_profile and admin_profile.status == "active")
+        if not is_any_admin:
             return Response(
                 {"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN
             )
 
-        queryset = Member.objects.select_related("user", "block", "district", "state")
-
-        # Filter by admin area
-        if not user.is_superuser:
-            if user.member_profile.block:
-                queryset = queryset.filter(block=user.member_profile.block)
-            elif user.member_profile.district:
-                queryset = queryset.filter(district=user.member_profile.district)
-            elif user.member_profile.state:
-                queryset = queryset.filter(state=user.member_profile.state)
+        queryset = _admin_member_queryset(user, Member.objects.select_related("user", "block", "district", "state"))
 
         # Apply filters
         status_param = request.query_params.get("status")
@@ -243,7 +238,9 @@ class AdminApprovalsListView(APIView):
 
     def get(self, request):
         user = request.user
-        if not (user.is_superuser or hasattr(user, "member_profile")):
+        admin_profile = getattr(user, "admin_profile", None)
+        is_any_admin = user.is_superuser or (admin_profile and admin_profile.status == "active")
+        if not is_any_admin:
             return Response(
                 {"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN
             )
@@ -252,18 +249,17 @@ class AdminApprovalsListView(APIView):
             "member", "member__user"
         ).filter(is_active=True)
 
-        # Filter by admin level
-        if not user.is_superuser:
-            if user.member_profile.block:
+        # Filter by admin level using explicit AdminProfile
+        if not user.is_superuser and admin_profile and admin_profile.status == "active":
+            if admin_profile.admin_level == "block" and admin_profile.area:
                 queryset = queryset.filter(
-                    member__block=user.member_profile.block, current_level="block"
+                    member__block=admin_profile.area, current_level="block"
                 )
-            elif user.member_profile.district:
+            elif admin_profile.admin_level == "district" and admin_profile.area:
                 queryset = queryset.filter(
-                    member__district=user.member_profile.district,
-                    current_level="district",
+                    member__district=admin_profile.area, current_level="district"
                 )
-            elif user.member_profile.state:
+            elif admin_profile.admin_level == "state" and admin_profile.area:
                 queryset = queryset.filter(current_level="state")
 
         # Filter by status
@@ -372,18 +368,14 @@ class AdminGeographicStatsView(APIView):
 
     def get(self, request):
         user = request.user
-        if not (user.is_superuser or hasattr(user, "member_profile")):
+        admin_profile = getattr(user, "admin_profile", None)
+        is_any_admin = user.is_superuser or (admin_profile and admin_profile.status == "active")
+        if not is_any_admin:
             return Response(
                 {"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN
             )
 
-        queryset = Member.objects.filter(user__is_active=True)
-
-        if not user.is_superuser:
-            if user.member_profile.state:
-                queryset = queryset.filter(state=user.member_profile.state)
-            elif user.member_profile.district:
-                queryset = queryset.filter(district=user.member_profile.district)
+        queryset = _admin_member_queryset(user, Member.objects.filter(user__is_active=True))
 
         # Members by district
         by_district = (

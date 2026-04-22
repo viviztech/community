@@ -60,8 +60,20 @@ export default function Register() {
       setValidationError('Password must be at least 8 characters');
       return;
     }
-    const { confirmPassword, ...registerData } = formData;
-    dispatch(register(registerData));
+
+    const { confirmPassword, phone_number, ...rest } = formData;
+
+    // Normalise phone: strip spaces/dashes, prepend +91 if user typed 10 digits
+    let phone = phone_number.trim().replace(/[\s\-]/g, '');
+    if (phone && !phone.startsWith('+')) {
+      phone = `+91${phone}`;
+    }
+
+    dispatch(register({
+      ...rest,
+      password_confirm: formData.password,
+      ...(phone ? { phone_number: phone } : {}),
+    }));
   };
 
   return (

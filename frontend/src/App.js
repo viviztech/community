@@ -21,12 +21,17 @@ import PublicEvents from './pages/Events';
 import Membership from './pages/Membership';
 import Contact from './pages/Contact';
 
+import Payments from './pages/Payments';
+import PaymentSuccess from './pages/PaymentSuccess';
+import PaymentFailed from './pages/PaymentFailed';
+import AdminNominations from './pages/AdminNominations';
+import MemberDirectory from './pages/MemberDirectory';
 import { fetchCurrentUser } from './store/slices/authSlice';
 
 // Protected Route Component
-const ProtectedRoute = ({ children, requireAdmin = false }) => {
-  const { isAuthenticated, loading, user } = useSelector((state) => state.auth);
-  
+const ProtectedRoute = ({ children, requireAdmin = false, requireLevel = null }) => {
+  const { isAuthenticated, loading, user, adminRole } = useSelector((state) => state.auth);
+
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
@@ -34,19 +39,27 @@ const ProtectedRoute = ({ children, requireAdmin = false }) => {
       </Box>
     );
   }
-  
+
   if (!isAuthenticated) {
     return <Navigate to="/login" />;
   }
-  
+
   if (requireAdmin) {
-    const isAdmin = user?.is_superuser || 
-      (user?.member_profile && (user.member_profile.block || user.member_profile.district || user.member_profile.state));
-    if (!isAdmin) {
-      return <Navigate to="/dashboard" />;
+    if (!adminRole) {
+      return <Navigate to="/app/dashboard" />;
     }
   }
-  
+
+  // requireLevel: 'block' | 'district' | 'state' | 'super'
+  if (requireLevel) {
+    const levelRank = { block: 1, district: 2, state: 3, super: 4 };
+    const userRank = levelRank[adminRole] || 0;
+    const requiredRank = levelRank[requireLevel] || 1;
+    if (userRank < requiredRank) {
+      return <Navigate to="/app/admin" />;
+    }
+  }
+
   return children;
 };
 
@@ -90,15 +103,26 @@ function App() {
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="profile" element={<Profile />} />
         <Route path="members" element={<Members />} />
+        <Route path="member-directory" element={<MemberDirectory />} />
         <Route path="events" element={<Events />} />
         <Route path="memberships" element={<Memberships />} />
+        <Route path="payments" element={<Payments />} />
         <Route path="admin" element={
           <ProtectedRoute requireAdmin>
             <AdminDashboard />
           </ProtectedRoute>
         } />
+        <Route path="admin/nominations" element={
+          <ProtectedRoute requireAdmin requireLevel="state">
+            <AdminNominations />
+          </ProtectedRoute>
+        } />
       </Route>
-      
+
+      {/* Payment result pages - accessible without full app layout */}
+      <Route path="/payments/success" element={<PaymentSuccess />} />
+      <Route path="/payments/failed" element={<PaymentFailed />} />
+
       {/* Legacy route for dashboard - redirects to /app/dashboard */}
       <Route path="/dashboard" element={<Navigate to="/app/dashboard" replace />} />
       

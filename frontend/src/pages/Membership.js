@@ -1,49 +1,42 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Check, ArrowRight, Users, Calendar, Award, Heart, BookOpen, Globe } from 'lucide-react';
 
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
+
+const FALLBACK_PLANS = [
+  {
+    name: 'Learner',
+    yearly_fee: '0.00',
+    lifetime_fee: null,
+    description: 'Start your journey with ACTIV',
+    benefits: ['Access to community events', 'Monthly newsletter', 'Member directory access'],
+    is_active: true,
+  },
+  {
+    name: 'Intermediate',
+    yearly_fee: '2000.00',
+    lifetime_fee: null,
+    description: 'For dedicated ACTIV members',
+    benefits: ['All Learner benefits', 'Workshop access', 'Priority event registration', 'Certificate of membership'],
+    is_active: true,
+  },
+];
+
 const Membership = () => {
-  const plans = [
-    {
-      name: 'Basic',
-      price: 'Free',
-      period: 'forever',
-      description: 'Perfect for getting started with our community',
-      features: [
-        'Access to community events',
-        'Monthly newsletter',
-        'Discussion forums',
-        'Member directory access',
-      ],
-      notIncluded: [
-        'Workshop access',
-        'Mentorship program',
-        'Priority event registration',
-        'Certificate of membership',
-      ],
-      cta: 'Get Started',
-      popular: false,
-    },
-    {
-      name: 'Premium',
-      price: '₹1,500',
-      period: 'per year',
-      description: 'For those who want to maximize their experience',
-      features: [
-        'All Basic features',
-        'Access to all workshops',
-        'Mentorship program',
-        'Priority event registration',
-        'Certificate of membership',
-        'Exclusive member resources',
-        'Networking sessions',
-        'Leadership opportunities',
-      ],
-      notIncluded: [],
-      cta: 'Join Premium',
-      popular: true,
-    },
-  ];
+  const [plans, setPlans] = useState(FALLBACK_PLANS);
+
+  useEffect(() => {
+    fetch(`${API_URL}/memberships/tiers/`)
+      .then((r) => r.json())
+      .then((data) => {
+        const results = data.results || data;
+        if (Array.isArray(results) && results.length > 0) {
+          setPlans(results.filter((t) => t.is_active));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const benefits = [
     {
@@ -121,55 +114,57 @@ const Membership = () => {
       <section className="py-20 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-            {plans.map((plan, index) => (
-              <div
-                key={index}
-                className={`relative bg-white rounded-3xl overflow-hidden ${
-                  plan.popular ? 'ring-4 ring-blue-600 shadow-2xl' : 'shadow-lg'
-                }`}
-              >
-                {plan.popular && (
-                  <div className="absolute top-0 right-0 bg-blue-600 text-white text-sm font-medium px-4 py-1 rounded-bl-xl">
-                    Most Popular
+            {plans.map((plan, index) => {
+              const isFree = !plan.yearly_fee || parseFloat(plan.yearly_fee) === 0;
+              const priceDisplay = isFree ? 'Free' : `₹${parseFloat(plan.yearly_fee).toLocaleString('en-IN')}`;
+              const periodDisplay = isFree ? 'forever' : 'per year';
+              const isPopular = index === Math.floor(plans.length / 2);
+              const features = Array.isArray(plan.benefits)
+                ? plan.benefits
+                : typeof plan.benefits === 'string'
+                  ? plan.benefits.split('\n').filter(Boolean)
+                  : [];
+              return (
+                <div
+                  key={plan.id || index}
+                  className={`relative bg-white rounded-3xl overflow-hidden ${
+                    isPopular ? 'ring-4 ring-blue-600 shadow-2xl' : 'shadow-lg'
+                  }`}
+                >
+                  {isPopular && (
+                    <div className="absolute top-0 right-0 bg-blue-600 text-white text-sm font-medium px-4 py-1 rounded-bl-xl">
+                      Most Popular
+                    </div>
+                  )}
+                  <div className="p-8">
+                    <h3 className="text-2xl font-bold text-gray-900 mb-2">{plan.name}</h3>
+                    <p className="text-gray-500 mb-4">{plan.description}</p>
+                    <div className="mb-6">
+                      <span className="text-4xl font-bold text-gray-900">{priceDisplay}</span>
+                      <span className="text-gray-500">/{periodDisplay}</span>
+                    </div>
+                    <div className="space-y-3 mb-8">
+                      {features.map((feature, i) => (
+                        <div key={i} className="flex items-start">
+                          <Check className="w-5 h-5 text-green-500 mr-3 flex-shrink-0 mt-0.5" />
+                          <span className="text-gray-600">{feature}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <Link
+                      to="/register"
+                      className={`block w-full py-4 rounded-xl font-semibold text-center transition-all ${
+                        isPopular
+                          ? 'bg-blue-600 text-white hover:bg-blue-700'
+                          : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
+                      }`}
+                    >
+                      {isFree ? 'Get Started' : 'Join Now'}
+                    </Link>
                   </div>
-                )}
-                <div className="p-8">
-                  <h3 className="text-2xl font-bold text-gray-900 mb-2">{plan.name}</h3>
-                  <p className="text-gray-500 mb-4">{plan.description}</p>
-                  
-                  <div className="mb-6">
-                    <span className="text-4xl font-bold text-gray-900">{plan.price}</span>
-                    <span className="text-gray-500">/{plan.period}</span>
-                  </div>
-                  
-                  <div className="space-y-3 mb-8">
-                    {plan.features.map((feature, i) => (
-                      <div key={i} className="flex items-start">
-                        <Check className="w-5 h-5 text-green-500 mr-3 flex-shrink-0 mt-0.5" />
-                        <span className="text-gray-600">{feature}</span>
-                      </div>
-                    ))}
-                    {plan.notIncluded.map((feature, i) => (
-                      <div key={i} className="flex items-start opacity-50">
-                        <Check className="w-5 h-5 text-gray-400 mr-3 flex-shrink-0 mt-0.5" />
-                        <span className="text-gray-400">{feature}</span>
-                      </div>
-                    ))}
-                  </div>
-                  
-                  <Link
-                    to="/register"
-                    className={`block w-full py-4 rounded-xl font-semibold text-center transition-all ${
-                      plan.popular
-                        ? 'bg-blue-600 text-white hover:bg-blue-700'
-                        : 'bg-gray-100 text-gray-900 hover:bg-gray-200'
-                    }`}
-                  >
-                    {plan.cta}
-                  </Link>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>

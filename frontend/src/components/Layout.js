@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import {
@@ -32,21 +32,20 @@ import {
   Logout as LogoutIcon,
   Settings as SettingsIcon,
   AdminPanelSettings as AdminIcon,
+  ManageAccounts as NominateIcon,
+  Business as DirectoryIcon,
 } from '@mui/icons-material';
 import { logout } from '../store/slices/authSlice';
+import { fetchNotifications } from '../store/slices/notificationSlice';
 
 const drawerWidth = 260;
 
 const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/app/dashboard' },
   { text: 'Profile', icon: <PersonIcon />, path: '/app/profile' },
-  { text: 'Members', icon: <PeopleIcon />, path: '/app/members' },
+  { text: 'Member Directory', icon: <DirectoryIcon />, path: '/app/member-directory' },
   { text: 'Events', icon: <EventIcon />, path: '/app/events' },
   { text: 'Memberships', icon: <MembershipIcon />, path: '/app/memberships' },
-];
-
-const adminMenuItems = [
-  { text: 'Admin Panel', icon: <AdminIcon />, path: '/app/admin' },
 ];
 
 export default function Layout() {
@@ -57,12 +56,20 @@ export default function Layout() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useSelector((state) => state.auth);
+  const { user, adminRole } = useSelector((state) => state.auth);
   const { unreadCount } = useSelector((state) => state.notifications);
 
-  // Check if user is admin
-  const isAdmin = user?.is_superuser || 
-    (user?.member_profile && (user.member_profile.block || user.member_profile.district || user.member_profile.state));
+  useEffect(() => {
+    dispatch(fetchNotifications());
+  }, [dispatch]);
+
+  const isAdmin = !!adminRole;
+  const isStateOrAbove = adminRole === 'state' || adminRole === 'super' || user?.is_superuser;
+
+  const adminMenuItems = [
+    { text: 'Admin Panel', icon: <AdminIcon />, path: '/app/admin' },
+    ...(isStateOrAbove ? [{ text: 'Manage Admins', icon: <NominateIcon />, path: '/app/admin/nominations' }] : []),
+  ];
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -164,8 +171,8 @@ export default function Layout() {
             <MenuIcon />
           </IconButton>
           <Box sx={{ flexGrow: 1 }} />
-          <IconButton color="inherit" sx={{ mr: 1 }}>
-            <Badge badgeContent={unreadCount} color="error">
+          <IconButton color="inherit" sx={{ mr: 1 }} onClick={() => navigate('/app/notifications')}>
+            <Badge badgeContent={unreadCount || null} color="error">
               <NotificationsIcon />
             </Badge>
           </IconButton>

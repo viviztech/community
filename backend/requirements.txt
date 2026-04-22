@@ -38,6 +38,10 @@ python-dateutil>=2.8,<3.0
 # Payments
 requests>=2.32,<3.0
 
+# PDF & QR Generation
+reportlab>=4.2,<5.0
+qrcode[pil]>=8.0,<9.0
+
 # Notifications
 django-phonenumber-field>=8.0,<9.0
 phonenumbers>=8.13,<9.0
@@ -47,8 +51,6 @@ twilio>=9.0,<10.0
 numpy>=2.0,<3.0
 pandas>=2.2,<3.0
 scikit-learn>=1.5,<2.0
-tensorflow>=2.17,<3.0
-spacy>=3.8,<4.0
 
 # Utilities
 python-dotenv>=1.0,<2.0

@@ -4,7 +4,7 @@ Serializers for Notifications.
 
 from rest_framework import serializers
 
-from .models import Notification, NotificationPreference, NotificationTemplate
+from .models import DeviceToken, Notification, NotificationPreference, NotificationTemplate
 
 
 class NotificationSerializer(serializers.ModelSerializer):
@@ -45,6 +45,15 @@ class NotificationTemplateSerializer(serializers.ModelSerializer):
             "is_active",
         ]
         read_only_fields = ["id"]
+
+
+class DeviceTokenSerializer(serializers.ModelSerializer):
+    """Serializer for FCM device tokens."""
+
+    class Meta:
+        model = DeviceToken
+        fields = ["id", "token", "platform", "is_active", "created_at"]
+        read_only_fields = ["id", "is_active", "created_at"]
 
 
 class NotificationPreferenceSerializer(serializers.ModelSerializer):

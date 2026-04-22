@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     BulkNotificationView,
+    DeviceTokenViewSet,
     NotificationPreferenceViewSet,
     NotificationTemplateViewSet,
     NotificationViewSet,
@@ -12,6 +13,7 @@ from .views import (
 router = DefaultRouter()
 router.register(r"templates", NotificationTemplateViewSet, basename="template")
 router.register(r"preferences", NotificationPreferenceViewSet, basename="preference")
+router.register(r"devices", DeviceTokenViewSet, basename="device-token")
 router.register(r"", NotificationViewSet, basename="notification")
 
 urlpatterns = [

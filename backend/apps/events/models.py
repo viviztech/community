@@ -93,6 +93,7 @@ class EventRegistration(models.Model):
         related_name="event_registration",
     )
     qr_code = models.CharField(max_length=100, null=True, blank=True)
+    qr_code_image = models.ImageField(upload_to="qr_codes/", null=True, blank=True)
     ticket_number = models.CharField(max_length=50, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -106,13 +107,27 @@ class EventRegistration(models.Model):
         return f"{self.member.user.full_name} - {self.event.title}"
 
     def generate_ticket(self):
-        """Generate ticket number and QR code."""
+        """Generate ticket number and QR code image."""
+        import io
         import uuid
+
+        import qrcode
+        from django.core.files.base import ContentFile
 
         self.ticket_number = (
             f"TKT/{self.event.id.hex[:8].upper()}/{uuid.uuid4().hex[:6].upper()}"
         )
-        self.qr_code = str(uuid.uuid4())
+        ticket_uuid = str(uuid.uuid4())
+        self.qr_code = ticket_uuid
+
+        # Generate actual QR code image
+        qr_data = f"ACTIV|{self.ticket_number}|{ticket_uuid}|{self.event.title}"
+        img = qrcode.make(qr_data)
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        filename = f"qr_{self.ticket_number}.png"
+        self.qr_code_image.save(filename, ContentFile(buffer.getvalue()), save=False)
+
         self.save()
         return self.ticket_number
 

@@ -25,12 +25,12 @@ class RecommendationView(APIView):
     def get(self, request):
         """Get member recommendations based on profile similarity."""
         try:
-            member = request.user.member_profile
-            if not member:
+            if not hasattr(request.user, 'member_profile'):
                 return Response(
                     {"error": "Member profile not found"},
                     status=status.HTTP_404_NOT_FOUND,
                 )
+            member = request.user.member_profile
 
             # Get recommendations based on business type, location, and category
             recommendations = self.get_similar_members(member)
@@ -422,6 +422,132 @@ class ChatbotView(APIView):
         )
 
 
+class SemanticSearchView(APIView):
+    """Semantic search across members, events, and content."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        query = request.query_params.get("q", "").strip()
+        search_type = request.query_params.get("type", "all")
+
+        if not query:
+            return Response(
+                {"error": "Query parameter 'q' is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        results = {}
+
+        if search_type in ("all", "members"):
+            results["members"] = self._search_members(query)
+
+        if search_type in ("all", "events"):
+            results["events"] = self._search_events(query)
+
+        return Response({"query": query, "results": results})
+
+    def _search_members(self, query, limit=10):
+        from django.db.models import Q
+
+        qs = Member.objects.filter(
+            Q(organization_name__icontains=query)
+            | Q(business_type__icontains=query)
+            | Q(business_activities__icontains=query)
+            | Q(user__first_name__icontains=query)
+            | Q(user__last_name__icontains=query)
+        ).select_related("user")[:limit]
+
+        return [
+            {
+                "id": str(m.id),
+                "name": m.user.full_name,
+                "organization": m.organization_name,
+                "business_type": m.business_type,
+                "location": f"{m.district.name if m.district else ''}".strip(),
+            }
+            for m in qs
+        ]
+
+    def _search_events(self, query, limit=10):
+        from django.db.models import Q
+
+        qs = Event.objects.filter(
+            Q(title__icontains=query)
+            | Q(description__icontains=query)
+            | Q(venue__icontains=query)
+        ).filter(status="published").order_by("event_date")[:limit]
+
+        return [
+            {
+                "id": str(e.id),
+                "title": e.title,
+                "date": e.event_date,
+                "venue": e.venue,
+                "price": float(e.ticket_price),
+            }
+            for e in qs
+        ]
+
+
+class DocumentVerificationView(APIView):
+    """AI-assisted document verification and data extraction."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        doc_type = request.data.get("document_type", "").lower()
+        doc_number = request.data.get("document_number", "").strip()
+
+        if not doc_type or not doc_number:
+            return Response(
+                {"error": "document_type and document_number are required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        result = self._verify_document(doc_type, doc_number)
+        return Response(result)
+
+    def _verify_document(self, doc_type, doc_number):
+        import re
+
+        patterns = {
+            "pan": r"^[A-Z]{5}[0-9]{4}[A-Z]{1}$",
+            "gst": r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$",
+            "aadhaar": r"^[2-9]{1}[0-9]{11}$",
+            "udyam": r"^UDYAM-[A-Z]{2}-[0-9]{2}-[0-9]{7}$",
+        }
+
+        pattern = patterns.get(doc_type)
+        if not pattern:
+            return {
+                "valid": False,
+                "message": f"Unsupported document type: {doc_type}",
+                "supported_types": list(patterns.keys()),
+            }
+
+        number_clean = doc_number.replace(" ", "").upper()
+        is_valid = bool(re.match(pattern, number_clean))
+
+        details = {}
+        if is_valid and doc_type == "pan":
+            entity_map = {"P": "Individual", "C": "Company", "H": "HUF", "F": "Firm", "A": "AOP"}
+            details["entity_type"] = entity_map.get(number_clean[3], "Other")
+            details["state_code"] = number_clean[:5]
+
+        if is_valid and doc_type == "gst":
+            details["state_code"] = number_clean[:2]
+            details["pan_embedded"] = number_clean[2:12]
+
+        return {
+            "valid": is_valid,
+            "document_type": doc_type,
+            "document_number": number_clean,
+            "message": "Document format is valid" if is_valid else f"Invalid {doc_type.upper()} format",
+            "details": details,
+        }
+
+
 class BusinessMatchingView(APIView):
     """AI-powered B2B business matching."""
 
@@ -430,12 +556,12 @@ class BusinessMatchingView(APIView):
     def get(self, request):
         """Get business matching recommendations."""
         try:
-            member = request.user.member_profile
-            if not member:
+            if not hasattr(request.user, 'member_profile'):
                 return Response(
                     {"error": "Member profile not found"},
                     status=status.HTTP_404_NOT_FOUND,
                 )
+            member = request.user.member_profile
 
             matches = self._find_business_matches(member)
 

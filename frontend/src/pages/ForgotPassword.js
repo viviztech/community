@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { Link as RouterLink } from 'react-router-dom';
+import { Link as RouterLink, useSearchParams } from 'react-router-dom';
 import {
   Box,
   Card,
@@ -15,15 +15,21 @@ import {
   Button,
 } from '@mui/material';
 import { Email, ArrowBack, Visibility, VisibilityOff } from '@mui/icons-material';
+import { resetPasswordRequest, resetPasswordConfirm } from '../store/slices/authSlice';
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [isResetMode, setIsResetMode] = useState(false);
+  const [searchParams] = useSearchParams();
   const dispatch = useDispatch();
   const { loading, error, successMessage } = useSelector((state) => state.auth);
+
+  // If uid & token are in the URL, we're in reset-confirm mode
+  const uid = searchParams.get('uid');
+  const token = searchParams.get('token');
+  const isResetMode = !!(uid && token);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -32,9 +38,9 @@ export default function ForgotPassword() {
         alert('Passwords do not match');
         return;
       }
+      dispatch(resetPasswordConfirm({ uid, token, password: newPassword, password_confirm: confirmPassword }));
     } else {
-      // Handle forgot password request
-      console.log('Forgot password request for:', email);
+      dispatch(resetPasswordRequest({ email }));
     }
   };
 

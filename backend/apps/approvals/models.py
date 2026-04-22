@@ -36,6 +36,10 @@ class ApprovalWorkflow(models.Model):
         max_length=20, choices=Status.choices, default=Status.PENDING
     )
     is_active = models.BooleanField(default=True)
+    # Tracks when the workflow entered the current level — used for SLA/reminder timing
+    level_entered_at = models.DateTimeField(default=timezone.now)
+    # Set when a reminder has been sent at the current level (cleared on level advance)
+    reminder_sent_at = models.DateTimeField(null=True, blank=True)
     escalated_at = models.DateTimeField(null=True, blank=True)
     escalation_count = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -69,10 +73,12 @@ class ApprovalWorkflow(models.Model):
             return self.Level.BLOCK
 
     def advance_to_next_level(self):
-        """Advance to the next approval level."""
+        """Advance to the next approval level, resetting SLA timing."""
         next_level = self.get_next_level()
         if next_level:
             self.current_level = next_level
+            self.level_entered_at = timezone.now()
+            self.reminder_sent_at = None
             self.save()
             return True
         return False
@@ -119,9 +125,10 @@ class EscalationRule(models.Model):
     level = models.CharField(
         max_length=20, choices=ApprovalWorkflow.Level.choices, unique=True
     )
-    hours_to_escalate = models.IntegerField(default=24)
+    hours_to_remind = models.IntegerField(default=12)       # send reminder after 12h
+    hours_to_escalate = models.IntegerField(default=24)     # auto-escalate after 24h
     escalate_to = models.CharField(
-        max_length=20, choices=ApprovalWorkflow.Level.choices
+        max_length=20, choices=ApprovalWorkflow.Level.choices, blank=True
     )
     notify_via_email = models.BooleanField(default=True)
     notify_via_sms = models.BooleanField(default=True)

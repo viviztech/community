@@ -14,12 +14,67 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Notification, NotificationPreference, NotificationTemplate
+from .models import DeviceToken, Notification, NotificationPreference, NotificationTemplate
 from .serializers import (
+    DeviceTokenSerializer,
     NotificationPreferenceSerializer,
     NotificationSerializer,
     NotificationTemplateSerializer,
 )
+
+
+class FCMService:
+    """Service for sending Firebase Cloud Messaging push notifications."""
+
+    @staticmethod
+    def send_push(user, title, body, data=None):
+        """Send push notification to all active device tokens for a user."""
+        try:
+            server_key = settings.FCM_SERVER_KEY
+            if not server_key:
+                return False
+
+            tokens = list(
+                DeviceToken.objects.filter(user=user, is_active=True).values_list("token", flat=True)
+            )
+            if not tokens:
+                return False
+
+            payload = {
+                "registration_ids": tokens,
+                "notification": {"title": title, "body": body},
+                "data": data or {},
+            }
+
+            response = requests.post(
+                "https://fcm.googleapis.com/fcm/send",
+                headers={
+                    "Authorization": f"key={server_key}",
+                    "Content-Type": "application/json",
+                },
+                data=json.dumps(payload),
+                timeout=30,
+            )
+
+            result = response.json()
+            # Deactivate tokens that are no longer registered
+            if result.get("failure", 0) > 0:
+                for idx, res in enumerate(result.get("results", [])):
+                    if res.get("error") in ("NotRegistered", "InvalidRegistration"):
+                        DeviceToken.objects.filter(token=tokens[idx]).update(is_active=False)
+
+            Notification.objects.create(
+                user=user,
+                channel=Notification.Channel.PUSH,
+                subject=title,
+                body=body,
+                status=Notification.Status.SENT,
+                sent_at=timezone.now(),
+            )
+            return True
+        except Exception as e:
+            print(f"FCM push error: {e}")
+            return False
 
 
 class TwilioService:
@@ -262,6 +317,11 @@ class NotificationService:
         return results
 
     @staticmethod
+    def send_push(user, title, body, data=None):
+        """Send push notification via FCM."""
+        return FCMService.send_push(user, title, body, data)
+
+    @staticmethod
     def render_template(template_str, context):
         """Render template with context variables."""
         if not template_str:
@@ -396,13 +456,44 @@ class SendNotificationView(APIView):
         )
 
 
+class DeviceTokenViewSet(viewsets.ModelViewSet):
+    """ViewSet for managing FCM device tokens."""
+
+    serializer_class = DeviceTokenSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return DeviceToken.objects.filter(user=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        token = request.data.get("token")
+        platform = request.data.get("platform", "android")
+
+        if not token:
+            return Response({"error": "token is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        device_token, _ = DeviceToken.objects.update_or_create(
+            token=token,
+            defaults={"user": request.user, "platform": platform, "is_active": True},
+        )
+        return Response(DeviceTokenSerializer(device_token).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=["delete"])
+    def deregister(self, request):
+        """Deactivate a device token (on logout)."""
+        token = request.data.get("token")
+        if token:
+            DeviceToken.objects.filter(token=token, user=request.user).update(is_active=False)
+        return Response({"status": "deregistered"})
+
+
 class BulkNotificationView(APIView):
     """API view to send bulk notifications."""
 
     permission_classes = [permissions.IsAdminUser]
 
     def post(self, request):
-        """Send notification to multiple users."""
+        """Send notification to multiple users asynchronously via Celery."""
         user_ids = request.data.get("user_ids", [])
         channel = request.data.get("channel", "email")
         subject = request.data.get("subject", "")
@@ -413,25 +504,7 @@ class BulkNotificationView(APIView):
                 {"error": "No users specified"}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        from apps.accounts.models import User
+        from .tasks import send_bulk_notification_task
+        task = send_bulk_notification_task.delay(user_ids, channel, subject, body)
 
-        users = User.objects.filter(id__in=user_ids)
-
-        results = {"sent": 0, "failed": 0}
-
-        for user in users:
-            if channel == "email":
-                success = NotificationService.send_email(user, subject, body)
-            elif channel == "sms":
-                success = NotificationService.send_sms(user, body)
-            elif channel == "whatsapp":
-                success = NotificationService.send_whatsapp(user, body)
-            else:
-                continue
-
-            if success:
-                results["sent"] += 1
-            else:
-                results["failed"] += 1
-
-        return Response(results)
+        return Response({"status": "queued", "task_id": task.id})

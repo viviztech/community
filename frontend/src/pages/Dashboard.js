@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -11,6 +11,10 @@ import {
   Avatar,
   Chip,
   LinearProgress,
+  Stepper,
+  Step,
+  StepLabel,
+  Alert,
 } from '@mui/material';
 import {
   Person as PersonIcon,
@@ -18,10 +22,19 @@ import {
   CardMembership as MembershipIcon,
   TrendingUp as TrendingUpIcon,
   ArrowForward as ArrowForwardIcon,
+  CheckCircle as CheckCircleIcon,
+  Cancel as CancelIcon,
+  HourglassEmpty as PendingIcon,
 } from '@mui/icons-material';
+import axios from 'axios';
 import { fetchMemberProfile } from '../store/slices/memberSlice';
 import { fetchEvents } from '../store/slices/eventSlice';
 import { fetchMyMemberships } from '../store/slices/membershipSlice';
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
+
+const APPROVAL_STEPS = ['Block', 'District', 'State', 'Final'];
+const STEP_KEYS = ['block', 'district', 'state', 'final'];
 
 const StatCard = ({ title, value, icon, color, subtitle }) => (
   <Card sx={{ height: '100%' }}>
@@ -47,6 +60,128 @@ const StatCard = ({ title, value, icon, color, subtitle }) => (
     </CardContent>
   </Card>
 );
+
+function ApprovalStatusCard({ profile }) {
+  const [workflow, setWorkflow] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem('accessToken');
+    axios
+      .get(`${API_URL}/approvals/my_applications/`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      .then((res) => {
+        const apps = res.data;
+        if (apps.length > 0) setWorkflow(apps[0]);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (profile?.is_approved) {
+    return (
+      <Card sx={{ mt: 3 }}>
+        <CardContent>
+          <Typography variant="h6" fontWeight={600} gutterBottom>
+            Approval Status
+          </Typography>
+          <Box display="flex" alignItems="center" gap={1}>
+            <CheckCircleIcon color="success" />
+            <Typography color="success.main" fontWeight={600}>
+              Approved Member
+            </Typography>
+          </Box>
+          {profile.approved_at && (
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+              Approved on {new Date(profile.approved_at).toLocaleDateString('en-IN')}
+            </Typography>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (loading) return null;
+
+  if (!workflow) {
+    return (
+      <Card sx={{ mt: 3 }}>
+        <CardContent>
+          <Typography variant="h6" fontWeight={600} gutterBottom>
+            Approval Status
+          </Typography>
+          <Alert severity="info" sx={{ mt: 1 }}>
+            No approval workflow found. Complete your profile to begin.
+          </Alert>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const currentStepIndex = STEP_KEYS.indexOf(workflow.current_level);
+  const isRejected = workflow.status === 'rejected';
+
+  return (
+    <Card sx={{ mt: 3 }}>
+      <CardContent>
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+          <Typography variant="h6" fontWeight={600}>
+            Approval Status
+          </Typography>
+          <Chip
+            label={workflow.status_display || workflow.status}
+            color={
+              workflow.status === 'approved'
+                ? 'success'
+                : workflow.status === 'rejected'
+                ? 'error'
+                : 'warning'
+            }
+            size="small"
+            icon={
+              workflow.status === 'approved' ? (
+                <CheckCircleIcon />
+              ) : workflow.status === 'rejected' ? (
+                <CancelIcon />
+              ) : (
+                <PendingIcon />
+              )
+            }
+          />
+        </Box>
+
+        {isRejected ? (
+          <Alert severity="error">
+            Your application was not approved. Please contact support or update your profile and reapply.
+          </Alert>
+        ) : (
+          <Stepper
+            activeStep={currentStepIndex}
+            alternativeLabel
+            sx={{ mt: 1 }}
+          >
+            {APPROVAL_STEPS.map((label) => (
+              <Step key={label}>
+                <StepLabel>{label}</StepLabel>
+              </Step>
+            ))}
+          </Stepper>
+        )}
+
+        {workflow.actions && workflow.actions.length > 0 && (
+          <Box mt={2}>
+            <Typography variant="caption" color="text.secondary">
+              Last action:{' '}
+              <strong>{workflow.actions[workflow.actions.length - 1].level_display}</strong> —{' '}
+              {workflow.actions[workflow.actions.length - 1].action}
+            </Typography>
+          </Box>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function Dashboard() {
   const dispatch = useDispatch();
@@ -257,7 +392,7 @@ export default function Dashboard() {
                   value={profile?.profile_completion_percentage || 0}
                   sx={{ height: 8, borderRadius: 4 }}
                 />
-                {profile?.profile_completion_percentage < 80 && (
+                {(profile?.profile_completion_percentage || 0) < 80 && (
                   <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
                     Complete 80% to become eligible for membership approval
                   </Typography>
@@ -273,6 +408,8 @@ export default function Dashboard() {
               </Box>
             </CardContent>
           </Card>
+
+          <ApprovalStatusCard profile={profile} />
         </Grid>
       </Grid>
     </Box>
