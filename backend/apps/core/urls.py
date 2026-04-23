@@ -3,6 +3,7 @@ from django.urls import path
 
 from .views import (
     AdminApprovalsListView,
+    AdminAreaListView,
     AdminDashboardStatsView,
     AdminGeographicStatsView,
     AdminMembersListView,
@@ -34,4 +35,5 @@ urlpatterns = [
         AdminGeographicStatsView.as_view(),
         name="admin-geographic-stats",
     ),
+    path("admin/areas/", AdminAreaListView.as_view(), name="admin-areas"),
 ]

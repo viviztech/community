@@ -7,63 +7,105 @@ const getAuthHeader = () => ({
   headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` },
 });
 
-export const fetchDashboardStats = createAsyncThunk('admin/fetchStats', async (_, { rejectWithValue }) => {
-  try {
-    const response = await axios.get(`${API_URL}/admin/dashboard/stats/`, getAuthHeader());
-    return response.data;
-  } catch (error) {
-    return rejectWithValue(error.response?.data || 'Failed to fetch stats');
-  }
-});
+export const fetchDashboardStats = createAsyncThunk(
+  'admin/fetchStats',
+  async (params = {}, { rejectWithValue }) => {
+    try {
+      const response = await axios.get(`${API_URL}/admin/dashboard/stats/`, {
+        ...getAuthHeader(),
+        params,
+      });
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || 'Failed to fetch stats');
+    }
+  },
+);
 
-export const fetchAdminMembers = createAsyncThunk('admin/fetchMembers', async (params = {}, { rejectWithValue }) => {
-  try {
-    const response = await axios.get(`${API_URL}/admin/members/`, { ...getAuthHeader(), params });
-    return response.data;
-  } catch (error) {
-    return rejectWithValue(error.response?.data || 'Failed to fetch members');
-  }
-});
+export const fetchAdminMembers = createAsyncThunk(
+  'admin/fetchMembers',
+  async (params = {}, { rejectWithValue }) => {
+    try {
+      const response = await axios.get(`${API_URL}/admin/members/`, {
+        ...getAuthHeader(),
+        params,
+      });
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || 'Failed to fetch members');
+    }
+  },
+);
 
-export const fetchAdminApprovals = createAsyncThunk('admin/fetchApprovals', async (params = {}, { rejectWithValue }) => {
-  try {
-    const response = await axios.get(`${API_URL}/admin/approvals/`, { ...getAuthHeader(), params });
-    return response.data;
-  } catch (error) {
-    return rejectWithValue(error.response?.data || 'Failed to fetch approvals');
-  }
-});
+export const fetchAdminApprovals = createAsyncThunk(
+  'admin/fetchApprovals',
+  async (params = {}, { rejectWithValue }) => {
+    try {
+      const response = await axios.get(`${API_URL}/admin/approvals/`, {
+        ...getAuthHeader(),
+        params,
+      });
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || 'Failed to fetch approvals');
+    }
+  },
+);
 
-export const fetchRevenueStats = createAsyncThunk('admin/fetchRevenue', async (_, { rejectWithValue }) => {
-  try {
-    const response = await axios.get(`${API_URL}/admin/revenue/`, getAuthHeader());
-    return response.data;
-  } catch (error) {
-    return rejectWithValue(error.response?.data || 'Failed to fetch revenue stats');
-  }
-});
+export const fetchGeographicStats = createAsyncThunk(
+  'admin/fetchGeographic',
+  async (params = {}, { rejectWithValue }) => {
+    try {
+      const response = await axios.get(`${API_URL}/admin/geographic-stats/`, {
+        ...getAuthHeader(),
+        params,
+      });
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || 'Failed to fetch geographic stats');
+    }
+  },
+);
 
-export const fetchGeographicStats = createAsyncThunk('admin/fetchGeographic', async (_, { rejectWithValue }) => {
-  try {
-    const response = await axios.get(`${API_URL}/admin/geographic-stats/`, getAuthHeader());
-    return response.data;
-  } catch (error) {
-    return rejectWithValue(error.response?.data || 'Failed to fetch geographic stats');
-  }
-});
+export const fetchAdminAreas = createAsyncThunk(
+  'admin/fetchAreas',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await axios.get(`${API_URL}/admin/areas/`, getAuthHeader());
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || 'Failed to fetch areas');
+    }
+  },
+);
 
-export const processApproval = createAsyncThunk('admin/processApproval', async ({ workflowId, action, comments }, { rejectWithValue }) => {
-  try {
-    const response = await axios.post(
-      `${API_URL}/approvals/${workflowId}/process_action/`,
-      { action, comments },
-      getAuthHeader(),
-    );
-    return response.data;
-  } catch (error) {
-    return rejectWithValue(error.response?.data || 'Failed to process approval');
-  }
-});
+export const fetchRevenueStats = createAsyncThunk(
+  'admin/fetchRevenue',
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await axios.get(`${API_URL}/admin/revenue/`, getAuthHeader());
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || 'Failed to fetch revenue stats');
+    }
+  },
+);
+
+export const processApproval = createAsyncThunk(
+  'admin/processApproval',
+  async ({ workflowId, action, comments }, { rejectWithValue }) => {
+    try {
+      const response = await axios.post(
+        `${API_URL}/approvals/${workflowId}/process_action/`,
+        { action, comments },
+        getAuthHeader(),
+      );
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || 'Failed to process approval');
+    }
+  },
+);
 
 const initialState = {
   stats: null,
@@ -73,6 +115,7 @@ const initialState = {
   approvalsTotal: 0,
   revenue: null,
   geographic: null,
+  areas: { blocks: [], districts: [] },
   loading: false,
   error: null,
 };
@@ -81,15 +124,11 @@ const adminSlice = createSlice({
   name: 'admin',
   initialState,
   reducers: {
-    clearError: (state) => {
-      state.error = null;
-    },
+    clearError: (state) => { state.error = null; },
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchDashboardStats.pending, (state) => {
-        state.loading = true;
-      })
+      .addCase(fetchDashboardStats.pending, (state) => { state.loading = true; })
       .addCase(fetchDashboardStats.fulfilled, (state, action) => {
         state.loading = false;
         state.stats = action.payload;
@@ -111,6 +150,9 @@ const adminSlice = createSlice({
       })
       .addCase(fetchGeographicStats.fulfilled, (state, action) => {
         state.geographic = action.payload;
+      })
+      .addCase(fetchAdminAreas.fulfilled, (state, action) => {
+        state.areas = action.payload;
       });
   },
 });

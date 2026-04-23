@@ -13,7 +13,7 @@ from rest_framework.views import APIView
 from apps.accounts.models import User
 from apps.approvals.models import ApprovalWorkflow
 from apps.events.models import Event, EventRegistration
-from apps.members.models import Member
+from apps.members.models import GeographicArea, Member
 from apps.memberships.models import Membership, MembershipTier
 from apps.payments.models import Payment
 
@@ -37,127 +37,211 @@ def _admin_member_queryset(user, base_qs=None):
     return base_qs.none()
 
 
+def _apply_common_filters(queryset, params):
+    """Apply area (block/district) and gender filters from query params."""
+    block_id = params.get("block")
+    if block_id:
+        queryset = queryset.filter(block_id=block_id)
+
+    district_id = params.get("district")
+    if district_id:
+        queryset = queryset.filter(district_id=district_id)
+
+    gender = params.get("gender")
+    if gender:
+        queryset = queryset.filter(gender=gender)
+
+    member_type = params.get("member_type")
+    if member_type:
+        queryset = queryset.filter(member_type=member_type)
+
+    social_category = params.get("social_category")
+    if social_category:
+        queryset = queryset.filter(social_category=social_category)
+
+    return queryset
+
+
 class AdminDashboardStatsView(APIView):
-    """Get admin dashboard statistics."""
+    """
+    Role-specific dashboard statistics.
+    Block admin  → block-scoped metrics
+    District admin → district-scoped metrics + block breakdown
+    State admin  → state-scoped metrics + district breakdown
+    Super admin  → all-India metrics + state breakdown
+    """
 
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         user = request.user
-        stats = {}
-
-        # Check if user is admin via explicit AdminProfile or superuser flag
-        is_superadmin = user.is_superuser
         admin_profile = getattr(user, "admin_profile", None)
-        is_any_admin = is_superadmin or (admin_profile and admin_profile.status == "active")
+        is_superadmin = user.is_superuser or (admin_profile and admin_profile.admin_level == "super")
+        is_any_admin = user.is_superuser or (admin_profile and admin_profile.status == "active")
 
         if not is_any_admin:
-            return Response(
-                {"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN
-            )
+            return Response({"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
 
-        # Base queryset based on admin level
-        member_queryset = _admin_member_queryset(user)
+        admin_level = "super" if is_superadmin else (admin_profile.admin_level if admin_profile else "super")
 
-        # Total members
-        stats["total_members"] = member_queryset.count()
+        # Base member queryset (geo-scoped)
+        base_qs = _admin_member_queryset(user, Member.objects.select_related("user", "block", "district", "state"))
+        params = request.query_params
+        filtered_qs = _apply_common_filters(base_qs, params)
 
-        # Approved members
-        stats["approved_members"] = member_queryset.filter(user__is_active=True).count()
+        # ── Core counts ──────────────────────────────────────────────────────
+        total_members = filtered_qs.count()
+        approved_members = filtered_qs.filter(is_approved=True).count()
+        pending_members = filtered_qs.filter(is_approved=False).count()
 
-        # Pending approvals
-        pending_approvals = ApprovalWorkflow.objects.filter(
-            status="pending", is_active=True
-        )
-        if not is_superadmin and admin_profile and admin_profile.status == "active":
-            if admin_profile.admin_level == "block" and admin_profile.area:
-                pending_approvals = pending_approvals.filter(
-                    member__block=admin_profile.area, current_level="block"
-                )
-            elif admin_profile.admin_level == "district" and admin_profile.area:
-                pending_approvals = pending_approvals.filter(
-                    member__district=admin_profile.area, current_level="district"
-                )
-            elif admin_profile.admin_level == "state" and admin_profile.area:
-                pending_approvals = pending_approvals.filter(current_level="state")
-        stats["pending_approvals"] = pending_approvals.count()
-
-        # Membership tiers breakdown
-        tier_stats = (
-            Membership.objects.filter(status="active")
-            .values("tier__name")
-            .annotate(count=Count("id"))
-        )
-        stats["membership_tiers"] = {
-            item["tier__name"]: item["count"] for item in tier_stats
+        # Gender breakdown
+        gender_breakdown = {
+            "male": filtered_qs.filter(gender="M").count(),
+            "female": filtered_qs.filter(gender="F").count(),
+            "other": filtered_qs.filter(gender="O").count(),
+            "not_set": filtered_qs.filter(gender__isnull=True).count(),
         }
 
-        # Revenue stats (this month)
-        month_start = timezone.now().replace(
-            day=1, hour=0, minute=0, second=0, microsecond=0
-        )
-        monthly_payments = Payment.objects.filter(
-            status="completed", created_at__gte=month_start
-        )
-        stats["monthly_revenue"] = (
-            monthly_payments.aggregate(total=Sum("amount"))["total"] or 0
-        )
+        # Member type breakdown
+        type_breakdown = {
+            row["member_type"]: row["count"]
+            for row in filtered_qs.values("member_type").annotate(count=Count("id"))
+        }
 
-        # Total revenue
-        stats["total_revenue"] = (
-            Payment.objects.filter(status="completed").aggregate(total=Sum("amount"))[
-                "total"
-            ]
-            or 0
-        )
+        # Social category breakdown
+        category_breakdown = {
+            row["social_category"]: row["count"]
+            for row in filtered_qs.exclude(social_category__isnull=True)
+                                  .values("social_category").annotate(count=Count("id"))
+        }
 
-        # Events stats
-        upcoming_events = Event.objects.filter(
-            event_date__gt=timezone.now(), status="published"
-        )
-        stats["upcoming_events"] = upcoming_events.count()
+        # ── Pending approvals (level-specific) ───────────────────────────────
+        approval_qs = ApprovalWorkflow.objects.filter(is_active=True)
+        if not is_superadmin and admin_profile and admin_profile.status == "active":
+            if admin_profile.admin_level == "block" and admin_profile.area:
+                approval_qs = approval_qs.filter(member__block=admin_profile.area, current_level="block")
+            elif admin_profile.admin_level == "district" and admin_profile.area:
+                approval_qs = approval_qs.filter(member__district=admin_profile.area, current_level="district")
+            elif admin_profile.admin_level == "state" and admin_profile.area:
+                approval_qs = approval_qs.filter(current_level__in=["state", "final"])
 
-        stats["total_events"] = Event.objects.count()
+        # Apply geo filters to approvals too
+        if params.get("block"):
+            approval_qs = approval_qs.filter(member__block_id=params["block"])
+        if params.get("district"):
+            approval_qs = approval_qs.filter(member__district_id=params["district"])
+        if params.get("gender"):
+            approval_qs = approval_qs.filter(member__gender=params["gender"])
 
-        # Event registrations this month
-        stats["event_registrations_this_month"] = EventRegistration.objects.filter(
-            created_at__gte=month_start, payment_status="completed"
+        pending_approvals = approval_qs.filter(status__in=["pending", "in_progress"]).count()
+        # SLA breach: pending for > 24 h at current level
+        sla_threshold = timezone.now() - timedelta(hours=24)
+        sla_breached = approval_qs.filter(
+            status__in=["pending", "in_progress"],
+            level_entered_at__lte=sla_threshold,
         ).count()
 
-        # Member growth (last 6 months)
-        growth_data = []
-        for i in range(5, -1, -1):
-            month_start = timezone.now().replace(
-                day=1, hour=0, minute=0, second=0, microsecond=0
-            )
-            month_start = month_start - timedelta(days=30 * i)
-            month_end = month_start + timedelta(days=30)
+        # ── Area breakdown (role-specific) ───────────────────────────────────
+        if admin_level in ("super", "state"):
+            # Show breakdown by district
+            area_breakdown = [
+                {"name": row["district__name"], "count": row["count"]}
+                for row in filtered_qs.exclude(district__isnull=True)
+                                      .values("district__name").annotate(count=Count("id"))
+                                      .order_by("-count")
+            ]
+            area_label = "By District"
+        elif admin_level == "district":
+            # Show breakdown by block
+            area_breakdown = [
+                {"name": row["block__name"], "count": row["count"]}
+                for row in filtered_qs.exclude(block__isnull=True)
+                                      .values("block__name").annotate(count=Count("id"))
+                                      .order_by("-count")
+            ]
+            area_label = "By Block"
+        else:
+            # Block admin — no further breakdown
+            area_breakdown = []
+            area_label = ""
 
-            count = Member.objects.filter(
-                created_at__gte=month_start, created_at__lt=month_end
+        # ── Member growth (last 6 months) ────────────────────────────────────
+        growth_data = []
+        now = timezone.now()
+        for i in range(5, -1, -1):
+            m_start = (now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                       - timedelta(days=30 * i))
+            m_end = m_start + timedelta(days=32)
+            m_end = m_end.replace(day=1)
+            count = filtered_qs.filter(created_at__gte=m_start, created_at__lt=m_end).count()
+            growth_data.append({"month": m_start.strftime("%b %Y"), "count": count})
+
+        # ── Revenue (super/state only) ───────────────────────────────────────
+        monthly_revenue = 0
+        total_revenue = 0
+        if admin_level in ("super", "state") and not params.get("block") and not params.get("district"):
+            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            monthly_revenue = float(
+                Payment.objects.filter(status="completed", created_at__gte=month_start)
+                               .aggregate(t=Sum("amount"))["t"] or 0
+            )
+            total_revenue = float(
+                Payment.objects.filter(status="completed").aggregate(t=Sum("amount"))["t"] or 0
+            )
+
+        # ── Events (super/state/district) ────────────────────────────────────
+        upcoming_events = 0
+        if admin_level in ("super", "state", "district"):
+            upcoming_events = Event.objects.filter(
+                event_date__gt=now, status="published"
             ).count()
 
-            growth_data.append({"month": month_start.strftime("%Y-%m"), "count": count})
-        stats["member_growth"] = growth_data
-
-        # Recent registrations
-        recent_members = member_queryset.order_by("-created_at")[:5]
-        stats["recent_registrations"] = [
+        # ── Recent registrations ─────────────────────────────────────────────
+        recent = filtered_qs.order_by("-created_at")[:5]
+        recent_registrations = [
             {
-                "id": m.id,
+                "id": str(m.id),
                 "name": m.user.full_name,
                 "email": m.user.email,
-                "organization": m.organization_name,
+                "member_type": m.member_type,
+                "block": m.block.name if m.block else None,
+                "district": m.district.name if m.district else None,
+                "gender": m.gender,
+                "is_approved": m.is_approved,
                 "created_at": m.created_at,
             }
-            for m in recent_members
+            for m in recent
         ]
 
-        return Response(stats)
+        return Response({
+            "admin_level": admin_level,
+            "admin_area": admin_profile.area.name if (admin_profile and admin_profile.area) else None,
+            # Core
+            "total_members": total_members,
+            "approved_members": approved_members,
+            "pending_members": pending_members,
+            "pending_approvals": pending_approvals,
+            "sla_breached": sla_breached,
+            # Breakdowns
+            "gender_breakdown": gender_breakdown,
+            "type_breakdown": type_breakdown,
+            "category_breakdown": category_breakdown,
+            "area_breakdown": area_breakdown,
+            "area_label": area_label,
+            # Charts
+            "member_growth": growth_data,
+            # Finance (super/state)
+            "monthly_revenue": monthly_revenue,
+            "total_revenue": total_revenue,
+            # Events
+            "upcoming_events": upcoming_events,
+            # Recent
+            "recent_registrations": recent_registrations,
+        })
 
 
 class AdminMembersListView(APIView):
-    """Admin view for managing all members."""
+    """Admin view for members with area, gender, type filters."""
 
     permission_classes = [permissions.IsAuthenticated]
 
@@ -166,73 +250,68 @@ class AdminMembersListView(APIView):
         admin_profile = getattr(user, "admin_profile", None)
         is_any_admin = user.is_superuser or (admin_profile and admin_profile.status == "active")
         if not is_any_admin:
-            return Response(
-                {"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN
-            )
+            return Response({"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
 
-        queryset = _admin_member_queryset(user, Member.objects.select_related("user", "block", "district", "state"))
+        queryset = _admin_member_queryset(
+            user, Member.objects.select_related("user", "block", "district", "state")
+        )
+        queryset = _apply_common_filters(queryset, request.query_params)
 
-        # Apply filters
-        status_param = request.query_params.get("status")
-        if status_param:
-            if status_param == "approved":
-                queryset = queryset.filter(user__is_active=True)
-            elif status_param == "pending":
-                queryset = queryset.filter(
-                    user__is_active=True,
-                    approval_workflows__status="pending",
-                    approval_workflows__is_active=True,
-                ).distinct()
+        # Approval status filter
+        approval_status = request.query_params.get("approval_status")
+        if approval_status == "approved":
+            queryset = queryset.filter(is_approved=True)
+        elif approval_status == "pending":
+            queryset = queryset.filter(is_approved=False)
 
-        social_category = request.query_params.get("category")
-        if social_category:
-            queryset = queryset.filter(social_category=social_category)
-
-        search = request.query_params.get("search")
+        # Free-text search
+        search = request.query_params.get("search", "").strip()
         if search:
             queryset = queryset.filter(
                 Q(user__first_name__icontains=search)
                 | Q(user__last_name__icontains=search)
                 | Q(user__email__icontains=search)
                 | Q(organization_name__icontains=search)
+                | Q(shg_name__icontains=search)
+                | Q(fpo_name__icontains=search)
             )
 
         # Pagination
         page = int(request.query_params.get("page", 1))
         page_size = int(request.query_params.get("page_size", 20))
         start = (page - 1) * page_size
-        end = start + page_size
 
         total = queryset.count()
-        members = queryset[start:end]
+        members = queryset.order_by("-created_at")[start: start + page_size]
 
-        return Response(
-            {
-                "count": total,
-                "results": [
-                    {
-                        "id": m.id,
-                        "name": m.user.full_name,
-                        "email": m.user.email,
-                        "phone": (
-                            str(m.user.phone_number) if m.user.phone_number else None
-                        ),
-                        "organization": m.organization_name,
-                        "block": m.block.name if m.block else None,
-                        "district": m.district.name if m.district else None,
-                        "social_category": m.social_category,
-                        "profile_completion": m.profile_completion_percentage,
-                        "is_active": m.user.is_active,
-                        "created_at": m.created_at,
-                    }
-                    for m in members
-                ],
-            }
-        )
+        return Response({
+            "count": total,
+            "results": [
+                {
+                    "id": str(m.id),
+                    "name": m.user.full_name,
+                    "email": m.user.email,
+                    "phone": str(m.user.phone_number) if m.user.phone_number else None,
+                    "member_type": m.member_type,
+                    "member_type_display": m.get_member_type_display(),
+                    "organization": m.organization_name or m.shg_name or m.fpo_name,
+                    "block": m.block.name if m.block else None,
+                    "block_id": str(m.block_id) if m.block_id else None,
+                    "district": m.district.name if m.district else None,
+                    "district_id": str(m.district_id) if m.district_id else None,
+                    "gender": m.gender,
+                    "social_category": m.social_category,
+                    "profile_completion": m.profile_completion_percentage,
+                    "is_approved": m.is_approved,
+                    "created_at": m.created_at,
+                }
+                for m in members
+            ],
+        })
 
 
 class AdminApprovalsListView(APIView):
-    """Admin view for managing approvals."""
+    """Admin view for approval queue with area and gender filters."""
 
     permission_classes = [permissions.IsAuthenticated]
 
@@ -241,128 +320,86 @@ class AdminApprovalsListView(APIView):
         admin_profile = getattr(user, "admin_profile", None)
         is_any_admin = user.is_superuser or (admin_profile and admin_profile.status == "active")
         if not is_any_admin:
-            return Response(
-                {"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN
-            )
+            return Response({"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
 
         queryset = ApprovalWorkflow.objects.select_related(
-            "member", "member__user"
+            "member", "member__user", "member__block", "member__district"
         ).filter(is_active=True)
 
-        # Filter by admin level using explicit AdminProfile
+        # Scope to admin level
         if not user.is_superuser and admin_profile and admin_profile.status == "active":
             if admin_profile.admin_level == "block" and admin_profile.area:
-                queryset = queryset.filter(
-                    member__block=admin_profile.area, current_level="block"
-                )
+                queryset = queryset.filter(member__block=admin_profile.area, current_level="block")
             elif admin_profile.admin_level == "district" and admin_profile.area:
-                queryset = queryset.filter(
-                    member__district=admin_profile.area, current_level="district"
-                )
+                queryset = queryset.filter(member__district=admin_profile.area, current_level="district")
             elif admin_profile.admin_level == "state" and admin_profile.area:
-                queryset = queryset.filter(current_level="state")
+                queryset = queryset.filter(current_level__in=["state", "final"])
 
-        # Filter by status
-        status_param = request.query_params.get("status")
-        if status_param:
-            queryset = queryset.filter(status=status_param)
+        # Filters
+        if request.query_params.get("block"):
+            queryset = queryset.filter(member__block_id=request.query_params["block"])
+        if request.query_params.get("district"):
+            queryset = queryset.filter(member__district_id=request.query_params["district"])
+        if request.query_params.get("gender"):
+            queryset = queryset.filter(member__gender=request.query_params["gender"])
+        if request.query_params.get("member_type"):
+            queryset = queryset.filter(member__member_type=request.query_params["member_type"])
+
+        wf_status = request.query_params.get("status", "active")
+        if wf_status == "active":
+            queryset = queryset.filter(status__in=["pending", "in_progress"])
+        elif wf_status in ("approved", "rejected", "pending", "in_progress"):
+            queryset = queryset.filter(status=wf_status)
+
+        search = request.query_params.get("search", "").strip()
+        if search:
+            queryset = queryset.filter(
+                Q(member__user__first_name__icontains=search)
+                | Q(member__user__last_name__icontains=search)
+                | Q(member__user__email__icontains=search)
+            )
 
         # Pagination
         page = int(request.query_params.get("page", 1))
         page_size = int(request.query_params.get("page_size", 20))
         start = (page - 1) * page_size
-        end = start + page_size
 
         total = queryset.count()
-        workflows = queryset[start:end]
+        workflows = queryset.order_by("level_entered_at")[start: start + page_size]
 
-        return Response(
-            {
-                "count": total,
-                "results": [
-                    {
-                        "id": w.id,
-                        "member_name": w.member.user.full_name,
-                        "member_email": w.member.user.email,
-                        "member_organization": w.member.organization_name,
-                        "current_level": w.current_level,
-                        "status": w.status,
-                        "created_at": w.created_at,
-                        "escalation_count": w.escalation_count,
-                    }
-                    for w in workflows
-                ],
-            }
-        )
+        now = timezone.now()
+        sla_threshold = now - timedelta(hours=24)
+        remind_threshold = now - timedelta(hours=12)
 
-
-class AdminRevenueStatsView(APIView):
-    """Get revenue statistics."""
-
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request):
-        user = request.user
-        if not user.is_superuser:
-            return Response(
-                {"error": "Super admin access required"},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
-        # Revenue by payment type
-        revenue_by_type = (
-            Payment.objects.filter(status="completed")
-            .values("payment_type")
-            .annotate(total=Sum("amount"), count=Count("id"))
-        )
-
-        # Revenue by month (last 12 months)
-        monthly_revenue = []
-        for i in range(11, -1, -1):
-            month_start = timezone.now().replace(
-                day=1, hour=0, minute=0, second=0, microsecond=0
-            )
-            if i > 0:
-                month_start = (month_start - timedelta(days=1)).replace(day=1)
-            month_end = month_start + timedelta(days=32)
-            month_end = month_end.replace(day=1)
-
-            total = (
-                Payment.objects.filter(
-                    status="completed",
-                    created_at__gte=month_start,
-                    created_at__lt=month_end,
-                ).aggregate(total=Sum("amount"))["total"]
-                or 0
-            )
-
-            monthly_revenue.append(
-                {"month": month_start.strftime("%Y-%m"), "total": float(total)}
-            )
-
-        return Response(
-            {
-                "total_revenue": Payment.objects.filter(status="completed").aggregate(
-                    total=Sum("amount")
-                )["total"]
-                or 0,
-                "total_transactions": Payment.objects.filter(
-                    status="completed"
-                ).count(),
-                "revenue_by_type": {
-                    item["payment_type"]: {
-                        "total": float(item["total"]),
-                        "count": item["count"],
-                    }
-                    for item in revenue_by_type
-                },
-                "monthly_revenue": monthly_revenue,
-            }
-        )
+        return Response({
+            "count": total,
+            "results": [
+                {
+                    "id": str(w.id),
+                    "member_name": w.member.user.full_name,
+                    "member_email": w.member.user.email,
+                    "member_type": w.member.member_type,
+                    "member_type_display": w.member.get_member_type_display(),
+                    "member_organization": w.member.organization_name or w.member.shg_name or w.member.fpo_name,
+                    "member_gender": w.member.gender,
+                    "block": w.member.block.name if w.member.block else None,
+                    "district": w.member.district.name if w.member.district else None,
+                    "current_level": w.current_level,
+                    "status": w.status,
+                    "escalation_count": w.escalation_count,
+                    "level_entered_at": w.level_entered_at,
+                    "hours_waiting": round((now - w.level_entered_at).total_seconds() / 3600, 1),
+                    "sla_breached": w.level_entered_at <= sla_threshold,
+                    "reminder_due": w.level_entered_at <= remind_threshold and w.reminder_sent_at is None,
+                    "created_at": w.created_at,
+                }
+                for w in workflows
+            ],
+        })
 
 
 class AdminGeographicStatsView(APIView):
-    """Get geographic distribution statistics."""
+    """Geographic distribution stats with filter support."""
 
     permission_classes = [permissions.IsAuthenticated]
 
@@ -371,46 +408,118 @@ class AdminGeographicStatsView(APIView):
         admin_profile = getattr(user, "admin_profile", None)
         is_any_admin = user.is_superuser or (admin_profile and admin_profile.status == "active")
         if not is_any_admin:
-            return Response(
-                {"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN
+            return Response({"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
+
+        queryset = _admin_member_queryset(user, Member.objects.all())
+        queryset = _apply_common_filters(queryset, request.query_params)
+
+        by_district = [
+            {"name": r["district__name"], "count": r["count"]}
+            for r in queryset.exclude(district__isnull=True)
+                             .values("district__name").annotate(count=Count("id")).order_by("-count")
+        ]
+        by_block = [
+            {"name": r["block__name"], "count": r["count"]}
+            for r in queryset.exclude(block__isnull=True)
+                             .values("block__name").annotate(count=Count("id")).order_by("-count")
+        ]
+        by_social_category = [
+            {"category": r["social_category"], "count": r["count"]}
+            for r in queryset.exclude(social_category__isnull=True)
+                             .values("social_category").annotate(count=Count("id"))
+        ]
+        by_gender = [
+            {"gender": r["gender"] or "Not set", "count": r["count"]}
+            for r in queryset.values("gender").annotate(count=Count("id"))
+        ]
+        by_member_type = [
+            {"type": r["member_type"], "count": r["count"]}
+            for r in queryset.values("member_type").annotate(count=Count("id"))
+        ]
+
+        return Response({
+            "by_district": by_district,
+            "by_block": by_block,
+            "by_social_category": by_social_category,
+            "by_gender": by_gender,
+            "by_member_type": by_member_type,
+        })
+
+
+class AdminRevenueStatsView(APIView):
+    """Revenue stats — super/state admin only."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        admin_profile = getattr(user, "admin_profile", None)
+        is_finance_admin = user.is_superuser or (
+            admin_profile and admin_profile.status == "active"
+            and admin_profile.admin_level in ("super", "state")
+        )
+        if not is_finance_admin:
+            return Response({"error": "State/Super admin access required"}, status=status.HTTP_403_FORBIDDEN)
+
+        revenue_by_type = (
+            Payment.objects.filter(status="completed")
+            .values("payment_type").annotate(total=Sum("amount"), count=Count("id"))
+        )
+
+        monthly_revenue = []
+        now = timezone.now()
+        for i in range(11, -1, -1):
+            m_start = (now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                       - timedelta(days=30 * i))
+            m_end = (m_start + timedelta(days=32)).replace(day=1)
+            total = float(
+                Payment.objects.filter(
+                    status="completed", created_at__gte=m_start, created_at__lt=m_end
+                ).aggregate(t=Sum("amount"))["t"] or 0
             )
+            monthly_revenue.append({"month": m_start.strftime("%b %Y"), "total": total})
 
-        queryset = _admin_member_queryset(user, Member.objects.filter(user__is_active=True))
+        return Response({
+            "total_revenue": float(
+                Payment.objects.filter(status="completed").aggregate(t=Sum("amount"))["t"] or 0
+            ),
+            "total_transactions": Payment.objects.filter(status="completed").count(),
+            "revenue_by_type": {
+                item["payment_type"]: {"total": float(item["total"]), "count": item["count"]}
+                for item in revenue_by_type
+            },
+            "monthly_revenue": monthly_revenue,
+        })
 
-        # Members by district
-        by_district = (
-            queryset.values("district__name")
-            .annotate(count=Count("id"))
-            .exclude(district__name__isnull=True)
-        )
 
-        # Members by block
-        by_block = (
-            queryset.values("block__name")
-            .annotate(count=Count("id"))
-            .exclude(block__name__isnull=True)
-        )
+class AdminAreaListView(APIView):
+    """
+    Returns blocks and districts visible to this admin —
+    used to populate the filter dropdowns in the dashboard.
+    """
 
-        # Members by social category
-        by_category = (
-            queryset.values("social_category")
-            .annotate(count=Count("id"))
-            .exclude(social_category__isnull=True)
-        )
+    permission_classes = [permissions.IsAuthenticated]
 
-        return Response(
-            {
-                "by_district": [
-                    {"name": item["district__name"], "count": item["count"]}
-                    for item in by_district
-                ],
-                "by_block": [
-                    {"name": item["block__name"], "count": item["count"]}
-                    for item in by_block
-                ],
-                "by_social_category": [
-                    {"category": item["social_category"], "count": item["count"]}
-                    for item in by_category
-                ],
-            }
-        )
+    def get(self, request):
+        user = request.user
+        admin_profile = getattr(user, "admin_profile", None)
+        is_any_admin = user.is_superuser or (admin_profile and admin_profile.status == "active")
+        if not is_any_admin:
+            return Response({"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
+
+        blocks_qs = GeographicArea.objects.filter(area_type="block", is_active=True)
+        districts_qs = GeographicArea.objects.filter(area_type="district", is_active=True)
+
+        # Scope to admin area
+        if not user.is_superuser and admin_profile and admin_profile.status == "active":
+            if admin_profile.admin_level == "district" and admin_profile.area:
+                blocks_qs = blocks_qs.filter(parent=admin_profile.area)
+                districts_qs = districts_qs.filter(id=admin_profile.area_id)
+            elif admin_profile.admin_level == "block" and admin_profile.area:
+                blocks_qs = blocks_qs.filter(id=admin_profile.area_id)
+                districts_qs = districts_qs.filter(id=admin_profile.area.parent_id) if admin_profile.area.parent else districts_qs.none()
+
+        return Response({
+            "blocks": [{"id": str(a.id), "name": a.name} for a in blocks_qs.order_by("name")],
+            "districts": [{"id": str(a.id), "name": a.name} for a in districts_qs.order_by("name")],
+        })
