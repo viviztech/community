@@ -34,11 +34,53 @@ export const fetchReceipt = createAsyncThunk('payments/receipt', async (paymentI
   }
 });
 
+export const downloadReceipt = createAsyncThunk('payments/downloadReceipt', async (paymentId, { rejectWithValue }) => {
+  try {
+    const response = await axios.get(`${API_URL}/payments/${paymentId}/receipt/`, {
+      ...getAuthHeader(),
+      params: { format: 'pdf' },
+      responseType: 'blob',
+    });
+    const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `receipt-${paymentId}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    return paymentId;
+  } catch (error) {
+    return rejectWithValue(error.response?.data || 'Failed to download receipt');
+  }
+});
+
+export const downloadCertificate = createAsyncThunk('payments/downloadCertificate', async (membershipId, { rejectWithValue }) => {
+  try {
+    const response = await axios.get(`${API_URL}/payments/memberships/${membershipId}/certificate/`, {
+      ...getAuthHeader(),
+      responseType: 'blob',
+    });
+    const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `membership-certificate-${membershipId}.pdf`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+    return membershipId;
+  } catch (error) {
+    return rejectWithValue(error.response?.data || 'Failed to download certificate');
+  }
+});
+
 const initialState = {
   payments: [],
   currentReceipt: null,
   paymentUrl: null,
   loading: false,
+  downloading: false,
   error: null,
   successMessage: null,
 };
@@ -74,6 +116,18 @@ const paymentsSlice = createSlice({
       })
       .addCase(fetchReceipt.fulfilled, (state, action) => {
         state.currentReceipt = action.payload;
+      })
+      .addCase(downloadReceipt.pending, (state) => { state.downloading = true; })
+      .addCase(downloadReceipt.fulfilled, (state) => { state.downloading = false; })
+      .addCase(downloadReceipt.rejected, (state, action) => {
+        state.downloading = false;
+        state.error = action.payload;
+      })
+      .addCase(downloadCertificate.pending, (state) => { state.downloading = true; })
+      .addCase(downloadCertificate.fulfilled, (state) => { state.downloading = false; })
+      .addCase(downloadCertificate.rejected, (state, action) => {
+        state.downloading = false;
+        state.error = action.payload;
       });
   },
 });

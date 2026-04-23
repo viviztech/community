@@ -172,8 +172,8 @@ class NotificationService:
     """Service class for sending notifications."""
 
     @staticmethod
-    def send_email(user, subject, body, html_body=None):
-        """Send email notification."""
+    def send_email(user, subject, body, html_body=None, attachments=None):
+        """Send email notification. attachments: list of (filename, bytes, mimetype)."""
         from django.core.mail import EmailMessage
 
         try:
@@ -186,6 +186,9 @@ class NotificationService:
             if html_body:
                 email.content_subtype = "html"
                 email.body = html_body
+
+            for filename, content, mimetype in (attachments or []):
+                email.attach(filename, content, mimetype)
 
             email.send(fail_silently=False)
 

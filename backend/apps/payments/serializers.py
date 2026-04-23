@@ -12,6 +12,13 @@ class PaymentSerializer(serializers.ModelSerializer):
 
     member_name = serializers.CharField(source="member.user.full_name", read_only=True)
     member_email = serializers.EmailField(source="member.user.email", read_only=True)
+    membership = serializers.SerializerMethodField()
+
+    def get_membership(self, obj):
+        try:
+            return {"id": obj.membership.id, "status": obj.membership.status}
+        except Exception:
+            return None
 
     class Meta:
         model = Payment
@@ -30,6 +37,7 @@ class PaymentSerializer(serializers.ModelSerializer):
             "receipt_number",
             "description",
             "metadata",
+            "membership",
             "created_at",
             "updated_at",
         ]

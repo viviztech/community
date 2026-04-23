@@ -29,12 +29,12 @@ import {
   CheckCircle as CheckCircleIcon,
   Pending as PendingIcon,
 } from '@mui/icons-material';
-import { fetchPayments, initiatePayment } from '../store/slices/paymentsSlice';
+import { fetchPayments, initiatePayment, downloadReceipt } from '../store/slices/paymentsSlice';
 
 export default function Payments() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { payments = [], loading, error, paymentUrl } = useSelector((state) => state.payments || {});
+  const { payments = [], loading, downloading, error, paymentUrl } = useSelector((state) => state.payments || {});
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState(null);
 
@@ -201,10 +201,11 @@ export default function Payments() {
                       <TableCell>
                         <Button
                           size="small"
-                          startIcon={<ReceiptIcon />}
-                          onClick={() => navigate(`/payments/receipt/${payment.id}`)}
+                          startIcon={downloading ? <CircularProgress size={14} /> : <ReceiptIcon />}
+                          disabled={downloading || payment.status !== 'completed'}
+                          onClick={() => dispatch(downloadReceipt(payment.id))}
                         >
-                          Receipt
+                          PDF
                         </Button>
                       </TableCell>
                     </TableRow>
